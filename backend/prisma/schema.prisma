@@ -1,0 +1,418 @@
+// ============================================
+// INVOICEIQ - DATABASE SCHEMA
+// PostgreSQL + Prisma ORM
+// ============================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  AP_ANALYST
+  FINANCE_MANAGER
+}
+
+enum InvoiceStatus {
+  UPLOADED
+  PROCESSING
+  APPROVED
+  NEEDS_REVIEW
+  REJECTED
+  FAILED
+}
+
+enum POStatus {
+  DRAFT
+  OPEN
+  PARTIALLY_INVOICED
+  CLOSED
+  CANCELLED
+}
+
+enum ProcessingStatus {
+  QUEUED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  SKIPPED
+}
+
+enum ExtractionMethod {
+  DIGITAL_TEXT
+  OCR
+  HYBRID
+}
+
+enum DecisionOutcome {
+  APPROVED
+  NEEDS_REVIEW
+  REJECTED
+}
+
+enum ValidationSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+}
+
+// ============================================
+// USER
+// ============================================
+
+model User {
+  id    String   @id @default(cuid())
+  name  String
+  email String   @unique
+  role  UserRole @default(AP_ANALYST)
+
+  uploadedInvoices Invoice[]  @relation("InvoiceUploader")
+  reviews          Review[]
+  auditLogs        AuditLog[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ============================================
+// VENDOR
+// ============================================
+
+model Vendor {
+  id       String  @id @default(cuid())
+  name     String
+  taxId    String? @unique
+  email    String?
+  phone    String?
+  address  String?
+  currency String  @default("INR")
+
+  purchaseOrders PurchaseOrder[]
+  invoices       Invoice[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([name])
+}
+
+// ============================================
+// PURCHASE ORDER
+// ============================================
+
+model PurchaseOrder {
+  id          String    @id @default(cuid())
+  poNumber    String    @unique
+  vendorId    String
+  status      POStatus  @default(OPEN)
+  currency    String    @default("INR")
+  totalAmount Decimal   @db.Decimal(18, 2)
+  issueDate   DateTime
+  expiryDate  DateTime?
+
+  vendor      Vendor         @relation(fields: [vendorId], references: [id])
+  items       POLineItem[]
+  invoices    Invoice[]
+  allocations POAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId])
+  @@index([status])
+}
+
+// ============================================
+// PURCHASE ORDER LINE ITEM
+// ============================================
+
+model POLineItem {
+  id          String  @id @default(cuid())
+  poId        String
+  description String
+  itemCode    String?
+  quantity    Decimal @db.Decimal(18, 4)
+  unitPrice   Decimal @db.Decimal(18, 4)
+
+  po          PurchaseOrder  @relation(fields: [poId], references: [id], onDelete: Cascade)
+  allocations POAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([poId])
+}
+
+// ============================================
+// INVOICE
+// ============================================
+
+model Invoice {
+  id            String  @id @default(cuid())
+  invoiceNumber String?
+  vendorId      String?
+  poId          String?
+  uploadedById  String?
+
+  invoiceDate DateTime?
+  dueDate     DateTime?
+
+  currency    String   @default("INR")
+  subtotal    Decimal? @db.Decimal(18, 2)
+  taxAmount   Decimal? @db.Decimal(18, 2)
+  totalAmount Decimal? @db.Decimal(18, 2)
+
+  status InvoiceStatus @default(UPLOADED)
+
+  originalFileName String
+  fileHash         String @unique
+  filePath         String
+
+  extractionMethod ExtractionMethod?
+
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id])
+  purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
+  uploadedBy    User?          @relation("InvoiceUploader", fields: [uploadedById], references: [id])
+
+  items          InvoiceLineItem[]
+  allocations    POAllocation[]
+  processingRuns ProcessingRun[]
+  reviews        Review[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceNumber, vendorId])
+  @@index([vendorId])
+  @@index([poId])
+  @@index([status])
+  @@index([uploadedById])
+}
+
+// ============================================
+// INVOICE LINE ITEM
+// ============================================
+
+model InvoiceLineItem {
+  id          String   @id @default(cuid())
+  invoiceId   String
+  description String
+  itemCode    String?
+  quantity    Decimal  @db.Decimal(18, 4)
+  unitPrice   Decimal  @db.Decimal(18, 4)
+  taxAmount   Decimal? @db.Decimal(18, 2)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+
+  invoice     Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  allocations POAllocation[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+}
+
+// ============================================
+// PURCHASE ORDER ALLOCATION
+// Connects invoice line items to PO line items.
+// Supports partial allocations.
+// ============================================
+
+model POAllocation {
+  id String @id @default(cuid())
+
+  invoiceId         String
+  purchaseOrderId   String
+  poLineItemId      String
+  invoiceLineItemId String
+
+  allocatedQuantity Decimal @db.Decimal(18, 4)
+  allocatedAmount   Decimal @db.Decimal(18, 2)
+
+  invoice         Invoice         @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  purchaseOrder   PurchaseOrder   @relation(fields: [purchaseOrderId], references: [id])
+  poLineItem      POLineItem      @relation(fields: [poLineItemId], references: [id])
+  invoiceLineItem InvoiceLineItem @relation(fields: [invoiceLineItemId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([invoiceLineItemId, poLineItemId])
+  @@index([invoiceId])
+  @@index([purchaseOrderId])
+  @@index([poLineItemId])
+}
+
+// ============================================
+// PROCESSING RUN
+// Each invoice can have multiple processing runs.
+// Extraction output is stored per run to preserve history.
+// ============================================
+
+model ProcessingRun {
+  id        String           @id @default(cuid())
+  invoiceId String
+  status    ProcessingStatus @default(QUEUED)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+
+  attempt Int     @default(1)
+  error   String?
+
+  extractionMethod ExtractionMethod?
+  modelName        String?
+  promptVersion    String?
+
+  rawExtraction  Json?
+  normalizedData Json?
+
+  invoice     Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  stages      ProcessingStage[]
+  validations ValidationResult[]
+  decision    Decision?
+
+  createdAt DateTime @default(now())
+
+  @@unique([invoiceId, attempt])
+  @@index([status])
+  @@index([invoiceId])
+}
+
+// ============================================
+// PROCESSING STAGE
+// Tracks each individual processing step.
+// ============================================
+
+model ProcessingStage {
+  id              String @id @default(cuid())
+  processingRunId String
+
+  name   String
+  status ProcessingStatus @default(QUEUED)
+
+  startedAt   DateTime?
+  completedAt DateTime?
+  durationMs  Int?
+
+  message  String?
+  error    String?
+  metadata Json?
+
+  processingRun ProcessingRun @relation(fields: [processingRunId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@unique([processingRunId, name])
+  @@index([status])
+}
+
+// ============================================
+// VALIDATION RESULT
+// Stores the result of each validation rule.
+// ============================================
+
+model ValidationResult {
+  id              String @id @default(cuid())
+  processingRunId String
+
+  ruleCode      String
+  field         String?
+  passed        Boolean
+  severity      ValidationSeverity
+  message       String
+  expectedValue String?
+  actualValue   String?
+
+  processingRun ProcessingRun @relation(fields: [processingRunId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+
+  @@index([processingRunId])
+  @@index([ruleCode])
+}
+
+// ============================================
+// DECISION
+// Stores the final decision made by the
+// deterministic invoice decision engine.
+// ============================================
+
+model Decision {
+  id              String @id @default(cuid())
+  processingRunId String @unique
+
+  outcome       DecisionOutcome
+  reason        String
+  explanation   String
+  policyVersion String?
+
+  processingRun ProcessingRun @relation(fields: [processingRunId], references: [id], onDelete: Cascade)
+
+  createdAt DateTime @default(now())
+}
+
+// ============================================
+// REVIEW
+// Tracks human review of invoices.
+// ============================================
+
+model Review {
+  id        String  @id @default(cuid())
+  invoiceId String
+  userId    String?
+
+  status   ReviewStatus @default(PENDING)
+  comments String?
+  reason   String?
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user    User?   @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId])
+  @@index([userId])
+  @@index([status])
+}
+
+// ============================================
+// AUDIT LOG
+// Records important system and user actions.
+// ============================================
+
+model AuditLog {
+  id     String  @id @default(cuid())
+  userId String?
+
+  entityType String
+  entityId   String
+  action     String
+
+  oldValue Json?
+  newValue Json?
+  metadata Json?
+
+  user User? @relation(fields: [userId], references: [id])
+
+  createdAt DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
