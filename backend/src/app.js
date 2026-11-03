@@ -1,3 +1,4 @@
+import invoiceRoutes from "./routes/invoice.routes.js";
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -32,6 +33,9 @@ app.get("/api/health", (req, res) => {
   });
 });
 
+// apis
+app.use("/api/invoices", invoiceRoutes);
+
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({
@@ -43,6 +47,27 @@ app.use((req, res) => {
 // Global error handler
 app.use((err, req, res, next) => {
   req.log?.error(err);
+
+  if (err.code === "LIMIT_FILE_SIZE") {
+    return res.status(413).json({
+      success: false,
+      message: "File size exceeds the 10 MB limit.",
+    });
+  }
+
+  if (err.code === "LIMIT_FILE_COUNT") {
+    return res.status(400).json({
+      success: false,
+      message: "Only one file can be uploaded at a time.",
+    });
+  }
+
+  if (err.code === "LIMIT_UNEXPECTED_FILE") {
+    return res.status(400).json({
+      success: false,
+      message: "Unexpected file field. Use 'invoice'.",
+    });
+  }
 
   res.status(err.status || 500).json({
     success: false,
