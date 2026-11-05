@@ -39,8 +39,9 @@ class InvoiceData(BaseModel):
 
     currency: ExtractedString = Field(default_factory=ExtractedString)
     po_number: ExtractedString = Field(default_factory=ExtractedString)
-
+    order_number: ExtractedString = Field(default_factory=ExtractedString)
     vendor: VendorDetails = Field(default_factory=VendorDetails)
+    
 
     subtotal: ExtractedNumber = Field(default_factory=ExtractedNumber)
     tax_amount: ExtractedNumber = Field(default_factory=ExtractedNumber)

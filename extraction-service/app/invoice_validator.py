@@ -48,7 +48,11 @@ def is_valid_date(value):
         "%Y/%m/%d",
         "%d.%m.%Y",
         "%d-%b-%Y",
-        "%d %b %Y"
+        "%d %b %Y",
+        "%B %d, %Y",
+        "%b %d, %Y",
+        "%d %B %Y",
+        "%d %b, %Y"
     ]
 
     for date_format in formats:
