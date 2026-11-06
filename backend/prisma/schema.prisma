@@ -101,7 +101,7 @@ model Vendor {
   email    String?
   phone    String?
   address  String?
-  currency String  @default("INR")
+  currency String?
 
   purchaseOrders PurchaseOrder[]
   invoices       Invoice[]
@@ -173,7 +173,7 @@ model Invoice {
   invoiceDate DateTime?
   dueDate     DateTime?
 
-  currency    String   @default("INR")
+  currency    String?
   subtotal    Decimal? @db.Decimal(18, 2)
   taxAmount   Decimal? @db.Decimal(18, 2)
   totalAmount Decimal? @db.Decimal(18, 2)

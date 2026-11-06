@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Literal
 from pydantic import BaseModel, Field
 
 
@@ -33,17 +33,37 @@ class InvoiceLineItem(BaseModel):
 
 
 class InvoiceData(BaseModel):
+    # Document classification
+    document_type: Literal[
+        "INVOICE",
+        "CREDIT_NOTE",
+        "CORRECTED_INVOICE",
+        "UNKNOWN",
+    ] = "UNKNOWN"
+
+    original_invoice_number: ExtractedString = Field(
+        default_factory=ExtractedString
+    )
+
     invoice_number: ExtractedString = Field(default_factory=ExtractedString)
     invoice_date: ExtractedString = Field(default_factory=ExtractedString)
     due_date: ExtractedString = Field(default_factory=ExtractedString)
-
     currency: ExtractedString = Field(default_factory=ExtractedString)
+
     po_number: ExtractedString = Field(default_factory=ExtractedString)
     order_number: ExtractedString = Field(default_factory=ExtractedString)
+
     vendor: VendorDetails = Field(default_factory=VendorDetails)
-    
 
     subtotal: ExtractedNumber = Field(default_factory=ExtractedNumber)
+
+    # Whether tax is already included in the subtotal.
+    tax_treatment: Literal[
+        "INCLUSIVE",
+        "EXCLUSIVE",
+        "UNKNOWN",
+    ] = "UNKNOWN"
+
     tax_amount: ExtractedNumber = Field(default_factory=ExtractedNumber)
     discount: ExtractedNumber = Field(default_factory=ExtractedNumber)
     total_amount: ExtractedNumber = Field(default_factory=ExtractedNumber)

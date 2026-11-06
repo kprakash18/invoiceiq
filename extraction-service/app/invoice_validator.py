@@ -1,3 +1,4 @@
+
 import re
 import math
 from datetime import datetime
@@ -151,6 +152,7 @@ def validate_numeric_fields(data, results):
                 f"{field} must be a valid finite number.",
                 value
             )
+
         elif value < 0:
             add_issue(
                 results,
@@ -186,7 +188,13 @@ def validate_line_items(data, results):
             )
             continue
 
-        for field in ["quantity", "unit_price", "tax_rate", "tax_amount", "line_total"]:
+        for field in [
+            "quantity",
+            "unit_price",
+            "tax_rate",
+            "tax_amount",
+            "line_total"
+        ]:
             value = get_value(item, field)
 
             if value is None:
@@ -201,6 +209,7 @@ def validate_line_items(data, results):
                     f"Line item {field} must be a valid finite number.",
                     value
                 )
+
             elif value < 0:
                 add_issue(
                     results,
@@ -231,12 +240,20 @@ def validate_invoice_arithmetic(data, results):
     discount = get_value(data, "discount")
     total = get_value(data, "total_amount")
 
-    # Only check arithmetic when subtotal, tax and total are available.
-    # A missing tax amount must not be assumed to mean zero.
+    tax_treatment = data.get("tax_treatment", "UNKNOWN")
+
+    if not isinstance(tax_treatment, str):
+        tax_treatment = "UNKNOWN"
+
+    tax_treatment = tax_treatment.strip().upper()
+
+    # Required values must be present and valid.
+    # A missing tax amount must never be assumed to be zero.
     values = [subtotal, tax_amount, total]
 
     if not all(
-        isinstance(value, (int, float)) and math.isfinite(value)
+        isinstance(value, (int, float))
+        and math.isfinite(value)
         for value in values
     ):
         return
@@ -244,10 +261,50 @@ def validate_invoice_arithmetic(data, results):
     if discount is None:
         discount = 0
 
-    if not isinstance(discount, (int, float)) or not math.isfinite(discount):
+    if (
+        not isinstance(discount, (int, float))
+        or not math.isfinite(discount)
+    ):
         return
 
-    expected_total = subtotal + tax_amount - discount
+    # When tax is zero, tax treatment does not affect arithmetic.
+    if tax_amount == 0:
+        expected_total = subtotal - discount
+
+    elif tax_treatment == "EXCLUSIVE":
+        # Tax is added to the subtotal.
+        expected_total = subtotal + tax_amount - discount
+
+    elif tax_treatment == "INCLUSIVE":
+        # Tax is already included in the subtotal.
+        expected_total = subtotal - discount
+
+    elif tax_treatment == "UNKNOWN":
+        add_issue(
+            results,
+            "tax_treatment",
+            "WARNING",
+            "TAX_TREATMENT_UNCLEAR",
+            (
+                "Tax treatment could not be determined. "
+                "Human review is required before verifying "
+                "the invoice total."
+            ),
+            tax_treatment
+        )
+        return
+
+    else:
+        add_issue(
+            results,
+            "tax_treatment",
+            "WARNING",
+            "INVALID_TAX_TREATMENT",
+            "Tax treatment must be INCLUSIVE, EXCLUSIVE, or UNKNOWN.",
+            tax_treatment
+        )
+        return
+
     difference = abs(expected_total - total)
 
     if difference > AMOUNT_TOLERANCE:

@@ -190,3 +190,37 @@ async def extract_hybrid_endpoint(
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
+from app.invoice_pipeline import process_invoice_pdf
+@app.post("/process")
+async def process_invoice(file: UploadFile = File(...)):
+    if file.content_type != "application/pdf":
+        raise HTTPException(
+            status_code=400,
+            detail="Only PDF files are supported"
+        )
+
+    temp_path = None
+
+    try:
+        content = await file.read()
+
+        if not content.startswith(b"%PDF-"):
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid PDF signature"
+            )
+
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix=".pdf"
+        ) as temp_file:
+            temp_file.write(content)
+            temp_path = temp_file.name
+
+        result = process_invoice_pdf(temp_path)
+
+        return result
+
+    finally:
+        if temp_path and os.path.exists(temp_path):
+            os.remove(temp_path)
