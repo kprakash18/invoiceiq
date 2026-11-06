@@ -1,3 +1,4 @@
+
 import { prisma } from "../config/prisma.js";
 
 import {
@@ -10,6 +11,43 @@ import { detectDuplicateInvoice } from "./duplicate-detection.service.js";
 import { matchPurchaseOrder } from "./po-matching.service.js";
 import { persistPOAllocations } from "./po-allocation.service.js";
 import { finalizeInvoiceDecision } from "./invoice-decision.service.js";
+
+async function recordProcessingStage({
+    processingRunId,
+    name,
+    status,
+    message,
+    metadata = {},
+    startedAt = new Date(),
+    completedAt = new Date(),
+}) {
+    await prisma.processingStage.upsert({
+        where: {
+            processingRunId_name: {
+                processingRunId,
+                name,
+            },
+        },
+        create: {
+            processingRunId,
+            name,
+            status,
+            message,
+            metadata,
+            startedAt,
+            completedAt,
+            durationMs: completedAt.getTime() - startedAt.getTime(),
+        },
+        update: {
+            status,
+            message,
+            metadata,
+            startedAt,
+            completedAt,
+            durationMs: completedAt.getTime() - startedAt.getTime(),
+        },
+    });
+}
 
 async function markTechnicalFailure({
     invoiceId,
@@ -64,12 +102,6 @@ async function markTechnicalFailure({
     }
 }
 
-/**
- * Coordinates the complete invoice processing workflow.
- *
- * Extraction is handled by the Python service.
- * Financial decisions are handled by the deterministic decision engine.
- */
 export async function orchestrateInvoiceProcessing({ invoiceId }) {
     if (!invoiceId) {
         return {
@@ -155,47 +187,116 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
             message: "PO allocation was not attempted.",
         };
 
+        const skippedStage = async (name, message, metadata = {}) => {
+            const now = new Date();
+
+            await recordProcessingStage({
+                processingRunId,
+                name,
+                status: "SKIPPED",
+                message,
+                metadata,
+                startedAt: now,
+                completedAt: now,
+            });
+        };
+
         // 4. Only ordinary invoices go through PO allocation.
         if (data.documentType === "INVOICE") {
+            const blockingValidationIssues = (
+                processed.validation?.results ?? []
+            ).filter(
+                (issue) =>
+                    issue.severity !== "INFO" &&
+                    issue.severity !== "WARNING"
+            );
+
             const validationPassed =
                 processed.validation?.success === true &&
-                (processed.validation.results ?? []).length === 0;
+                blockingValidationIssues.length === 0;
 
-            // 5. Do not allocate invoices with validation issues
-            // or incomplete line-item persistence.
             if (validationPassed && persistence.lineItemsPersisted) {
-                // 6. Identify the vendor.
+                // 5. Vendor matching.
+                const vendorStartedAt = new Date();
+
                 const vendorMatch = await matchVendor({
                     vendorName: data.vendor?.name,
                     gstin: data.vendor?.gstin,
                 });
 
                 if (vendorMatch.status === "MATCHED") {
-                    // Persist the identified vendor on the invoice.
                     await prisma.invoice.update({
                         where: { id: invoiceId },
                         data: {
                             vendorId: vendorMatch.vendor.id,
                         },
                     });
+                }
 
-                    // 7. Check for business-level duplicates.
+                await recordProcessingStage({
+                    processingRunId,
+                    name: "VENDOR_MATCHING",
+                    status: "COMPLETED",
+                    message:
+                        vendorMatch.message ??
+                        "Vendor matching completed.",
+                    metadata: {
+                        result: vendorMatch.status,
+                        vendorId: vendorMatch.vendor?.id ?? null,
+                        vendorName: vendorMatch.vendor?.name ?? null,
+                        reason: vendorMatch.reason ?? null,
+                    },
+                    startedAt: vendorStartedAt,
+                });
+
+                if (vendorMatch.status === "MATCHED") {
+                    // 6. Duplicate detection.
+                    const duplicateStartedAt = new Date();
+
                     const duplicate = await detectDuplicateInvoice({
                         vendorId: vendorMatch.vendor.id,
                         invoiceNumber: data.invoiceNumber,
                         excludeInvoiceId: invoiceId,
                     });
 
-                    // 8. Match the PO only when the invoice
-                    // is not a duplicate.
+                    await recordProcessingStage({
+                        processingRunId,
+                        name: "DUPLICATE_CHECK",
+                        status: "COMPLETED",
+                        message:
+                            duplicate.message ??
+                            "Duplicate check completed.",
+                        metadata: {
+                            isDuplicate: duplicate.isDuplicate,
+                            result: duplicate.reason ?? null,
+                        },
+                        startedAt: duplicateStartedAt,
+                    });
+
                     if (!duplicate.isDuplicate) {
+                        // 7. Purchase order matching.
+                        const poStartedAt = new Date();
+
                         const poMatch = await matchPurchaseOrder({
                             vendorId: vendorMatch.vendor.id,
                             poNumber: data.poNumber,
                             invoiceDate: data.invoiceDate,
                         });
 
-                        // 9. Verify currency before allocation.
+                        // 8. Persist matched PO independently of allocation.
+                        if (
+                            poMatch.status === "MATCHED" &&
+                            poMatch.purchaseOrder?.id
+                        ) {
+                            await prisma.invoice.update({
+                                where: { id: invoiceId },
+                                data: {
+                                    poId: poMatch.purchaseOrder.id,
+                                },
+                            });
+                        }
+
+                        // 9. Currency verification.
                         const currencyMatches =
                             data.currencyStatus === "IDENTIFIED" &&
                             data.currencyCode &&
@@ -203,35 +304,110 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                             data.currencyCode ===
                                 poMatch.purchaseOrder.currency;
 
-                        // 10. Persist allocations only after
-                        // all prerequisites have passed.
+                        await recordProcessingStage({
+                            processingRunId,
+                            name: "PO_MATCHING",
+                            status: "COMPLETED",
+                            message:
+                                poMatch.message ??
+                                "PO matching completed.",
+                            metadata: {
+                                result: poMatch.status,
+                                purchaseOrderId:
+                                    poMatch.purchaseOrder?.id ?? null,
+                                currencyMatches: Boolean(currencyMatches),
+                                invoiceCurrency:
+                                    data.currencyCode ?? null,
+                                poCurrency:
+                                    poMatch.purchaseOrder?.currency ?? null,
+                            },
+                            startedAt: poStartedAt,
+                        });
+
+                        // 10. Persist allocations only after prerequisites pass.
                         if (currencyMatches) {
-                            allocationResult =
-                                await persistPOAllocations({
-                                    invoiceId,
-                                    purchaseOrderId:
-                                        poMatch.purchaseOrder.id,
-                                    taxTreatment: data.taxTreatment,
-                                    documentType: data.documentType,
-                                });
+                            const allocationStartedAt = new Date();
+
+                            allocationResult = await persistPOAllocations({
+                                invoiceId,
+                                purchaseOrderId:
+                                    poMatch.purchaseOrder.id,
+                                taxTreatment: data.taxTreatment,
+                                documentType: data.documentType,
+                            });
+
+                            await recordProcessingStage({
+                                processingRunId,
+                                name: "PO_ALLOCATION",
+                                status: "COMPLETED",
+                                message:
+                                    allocationResult.message ??
+                                    "PO allocation completed.",
+                                metadata: {
+                                    result: allocationResult.status,
+                                    requiresReview:
+                                        allocationResult.requiresReview ??
+                                        false,
+                                    allocationCount:
+                                        allocationResult.allocationCount ??
+                                        0,
+                                    issues: allocationResult.issues ?? [],
+                                },
+                                startedAt: allocationStartedAt,
+                            });
                         } else {
                             allocationResult = {
                                 status: "SKIPPED",
                                 message:
                                     "PO matching or currency verification failed.",
                             };
+
+                            await skippedStage(
+                                "PO_ALLOCATION",
+                                allocationResult.message,
+                                {
+                                    poMatchStatus: poMatch.status,
+                                    currencyStatus: data.currencyStatus,
+                                }
+                            );
                         }
                     } else {
                         allocationResult = {
                             status: "SKIPPED",
-                            message: "Possible duplicate invoice detected.",
+                            message:
+                                "Possible duplicate invoice detected.",
                         };
+
+                        await skippedStage(
+                            "PO_MATCHING",
+                            "PO matching was skipped because a possible duplicate was detected."
+                        );
+
+                        await skippedStage(
+                            "PO_ALLOCATION",
+                            allocationResult.message
+                        );
                     }
                 } else {
                     allocationResult = {
                         status: "SKIPPED",
                         message: "Vendor could not be matched.",
                     };
+
+                    await skippedStage(
+                        "DUPLICATE_CHECK",
+                        "Duplicate detection requires a matched vendor."
+                    );
+
+                    await skippedStage(
+                        "PO_MATCHING",
+                        "PO matching requires a matched vendor."
+                    );
+
+                    await skippedStage(
+                        "PO_ALLOCATION",
+                        allocationResult.message
+                    );
                 }
             } else {
                 allocationResult = {
@@ -239,16 +415,55 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                     message:
                         "Validation issues or incomplete line items prevented allocation.",
                 };
+
+                await skippedStage(
+                    "VENDOR_MATCHING",
+                    "Vendor matching was skipped because validation failed or line items were not persisted."
+                );
+
+                await skippedStage(
+                    "DUPLICATE_CHECK",
+                    "Duplicate detection requires a matched vendor."
+                );
+
+                await skippedStage(
+                    "PO_MATCHING",
+                    "PO matching prerequisites were not satisfied."
+                );
+
+                await skippedStage(
+                    "PO_ALLOCATION",
+                    allocationResult.message
+                );
             }
         } else {
             allocationResult = {
                 status: "SKIPPED",
                 message: `PO allocation is not performed for ${data.documentType ?? "UNKNOWN"} documents.`,
             };
+
+            await skippedStage(
+                "VENDOR_MATCHING",
+                "Not applicable to this document type."
+            );
+
+            await skippedStage(
+                "DUPLICATE_CHECK",
+                "Not applicable to this document type."
+            );
+
+            await skippedStage(
+                "PO_MATCHING",
+                "Not applicable to this document type."
+            );
+
+            await skippedStage(
+                "PO_ALLOCATION",
+                allocationResult.message
+            );
         }
 
-        // 11. Persist allocation outcome without overwriting
-        // the existing normalized extraction data.
+        // 11. Persist allocation outcome without overwriting extraction data.
         const currentRun = await prisma.processingRun.findUnique({
             where: { id: processingRunId },
             select: {
@@ -269,7 +484,8 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                     ...(currentRun.normalizedData ?? {}),
                     allocationResult: {
                         status: allocationResult.status,
-                        requiresReview: allocationResult.requiresReview ?? false,
+                        requiresReview:
+                            allocationResult.requiresReview ?? false,
                         issues: allocationResult.issues ?? [],
                         message: allocationResult.message ?? null,
                     },
