@@ -212,6 +212,7 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                                     purchaseOrderId:
                                         poMatch.purchaseOrder.id,
                                     taxTreatment: data.taxTreatment,
+                                    documentType: data.documentType,
                                 });
                         } else {
                             allocationResult = {
