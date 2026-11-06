@@ -1,121 +1,65 @@
 import { useState } from 'react'
-import heroImg from './assets/hero.png'
-import reactLogo from './assets/react.svg'
-import viteLogo from './assets/vite.svg'
+import { Upload } from 'lucide-react'
+import Sidebar from './components/Sidebar'
+import Header from './components/Header'
+import KpiCard from './components/KpiCard'
+import RecentInvoices from './components/RecentInvoices'
+import EmptyState from './components/EmptyState'
 import './App.css'
 
+const invoices = [
+  { id: 'INV-2026-001', vendor: 'Acme Cloud Services', amount: '$1,250.00', date: 'May 24, 2026', status: 'Approved' },
+  { id: 'INV-2026-002', vendor: 'Apex Logistics Ltd', amount: '$4,820.00', date: 'May 24, 2026', status: 'Needs review' },
+  { id: 'INV-2026-003', vendor: 'Stripe Payments', amount: '$890.00', date: 'May 23, 2026', status: 'Processing' },
+  { id: 'INV_2026_receipt_04.pdf', vendor: 'Unknown vendor', amount: '—', date: 'May 22, 2026', status: 'Failed', muted: true },
+  { id: 'INV-2026-005', vendor: 'Datadog Operations', amount: '$620.00', date: 'May 21, 2026', status: 'Approved' },
+]
+
+function UploadDialog({ onClose }) {
+  return (
+    <div className="dialog-backdrop" role="presentation" onClick={onClose}>
+      <section className="upload-dialog" role="dialog" aria-modal="true" aria-labelledby="upload-title" onClick={(event) => event.stopPropagation()}>
+        <div className="dialog-icon"><Upload size={19} /></div>
+        <h2 id="upload-title">Upload an invoice</h2>
+        <p>Drop a PDF here or choose a file to begin processing.</p>
+        <label className="file-picker">
+          <Upload size={16} />
+          Choose PDF
+          <input type="file" accept="application/pdf" onChange={onClose} />
+        </label>
+        <button className="dialog-cancel" type="button" onClick={onClose}>Cancel</button>
+      </section>
+    </div>
+  )
+}
+
 function App() {
-  const [count, setCount] = useState(0)
+  const [uploadOpen, setUploadOpen] = useState(false)
 
   return (
-    <>
-      <section id="center">
-        <div className="hero">
-          <img src={heroImg} className="base" width="170" height="179" alt="" />
-          <img src={reactLogo} className="framework" alt="React logo" />
-          <img src={viteLogo} className="vite" alt="Vite logo" />
-        </div>
-        <div>
-          <h1>Get started</h1>
-          <p>
-            Edit <code>src/App.jsx</code> and save to test <code>HMR</code>
-          </p>
-        </div>
-        <button
-          type="button"
-          className="counter"
-          onClick={() => setCount((count) => count + 1)}
-        >
-          Count is {count}
-        </button>
-      </section>
-
-      <div className="ticks"></div>
-
-      <section id="next-steps">
-        <div id="docs">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#documentation-icon"></use>
-          </svg>
-          <h2>Documentation</h2>
-          <p>Your questions, answered</p>
-          <ul>
-            <li>
-              <a href="https://vite.dev/" target="_blank">
-                <img className="logo" src={viteLogo} alt="" />
-                Explore Vite
-              </a>
-            </li>
-            <li>
-              <a href="https://react.dev/" target="_blank">
-                <img className="button-icon" src={reactLogo} alt="" />
-                Learn more
-              </a>
-            </li>
-          </ul>
-        </div>
-        <div id="social">
-          <svg className="icon" role="presentation" aria-hidden="true">
-            <use href="/icons.svg#social-icon"></use>
-          </svg>
-          <h2>Connect with us</h2>
-          <p>Join the Vite community</p>
-          <ul>
-            <li>
-              <a href="https://github.com/vitejs/vite" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#github-icon"></use>
-                </svg>
-                GitHub
-              </a>
-            </li>
-            <li>
-              <a href="https://chat.vite.dev/" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#discord-icon"></use>
-                </svg>
-                Discord
-              </a>
-            </li>
-            <li>
-              <a href="https://x.com/vite_js" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#x-icon"></use>
-                </svg>
-                X.com
-              </a>
-            </li>
-            <li>
-              <a href="https://bsky.app/profile/vite.dev" target="_blank">
-                <svg
-                  className="button-icon"
-                  role="presentation"
-                  aria-hidden="true"
-                >
-                  <use href="/icons.svg#bluesky-icon"></use>
-                </svg>
-                Bluesky
-              </a>
-            </li>
-          </ul>
-        </div>
-      </section>
-
-      <div className="ticks"></div>
-      <section id="spacer"></section>
-    </>
+    <div className="app-shell">
+      <Sidebar />
+      <div className="main-shell">
+        <Header onUpload={() => setUploadOpen(true)} />
+        <main className="page-content">
+          <div className="content-wrap">
+            <div className="page-heading">
+              <h1>Invoice Overview</h1>
+              <p>Monitor your invoice processing activity.</p>
+            </div>
+            <section className="kpi-grid" aria-label="Invoice totals">
+              <KpiCard label="Total invoices" value="128" />
+              <KpiCard label="Approved" value="86" />
+              <KpiCard label="Needs review" value="24" />
+              <KpiCard label="Failed" value="3" />
+            </section>
+            <RecentInvoices invoices={invoices} />
+            <EmptyState onUpload={() => setUploadOpen(true)} />
+          </div>
+        </main>
+      </div>
+      {uploadOpen && <UploadDialog onClose={() => setUploadOpen(false)} />}
+    </div>
   )
 }
 
