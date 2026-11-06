@@ -73,6 +73,26 @@ enum ReviewStatus {
 }
 
 // ============================================
+// BACKGROUND PROCESSING
+// ============================================
+
+enum InvoiceJobStatus {
+  // Allowed transitions are enforced by the job service:
+  // QUEUED -> RUNNING | CANCELLED
+  // RUNNING -> COMPLETED | RETRY_WAIT | FAILED | CANCELLED
+  // RETRY_WAIT -> RUNNING | DEAD_LETTER | CANCELLED
+  // FAILED -> RETRY_WAIT | DEAD_LETTER
+  // COMPLETED, DEAD_LETTER, and CANCELLED are terminal.
+  QUEUED
+  RUNNING
+  RETRY_WAIT
+  COMPLETED
+  FAILED
+  DEAD_LETTER
+  CANCELLED
+}
+
+// ============================================
 // USER
 // ============================================
 
@@ -193,6 +213,7 @@ model Invoice {
   items          InvoiceLineItem[]
   allocations    POAllocation[]
   processingRuns ProcessingRun[]
+  processingJobs InvoiceProcessingJob[]
   reviews        Review[]
 
   createdAt DateTime @default(now())
@@ -282,16 +303,55 @@ model ProcessingRun {
   rawExtraction  Json?
   normalizedData Json?
 
-  invoice     Invoice            @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  invoice     Invoice                @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   stages      ProcessingStage[]
   validations ValidationResult[]
   decision    Decision?
+  jobs        InvoiceProcessingJob[]
 
   createdAt DateTime @default(now())
 
   @@unique([invoiceId, attempt])
   @@index([status])
   @@index([invoiceId])
+}
+
+// ============================================
+// INVOICE PROCESSING JOB
+// Durable job state is kept in PostgreSQL; Redis is only a delivery mechanism.
+// ============================================
+
+model InvoiceProcessingJob {
+  id              String           @id @default(cuid())
+  invoiceId       String
+  processingRunId String?
+  idempotencyKey  String           @unique
+  status          InvoiceJobStatus @default(QUEUED)
+  attempt         Int              @default(0)
+  maxAttempts     Int              @default(3)
+  availableAt     DateTime         @default(now())
+  queuedAt        DateTime         @default(now())
+  startedAt       DateTime?
+  lastAttemptAt   DateTime?
+  completedAt     DateTime?
+  failedAt        DateTime?
+  lockedAt        DateTime?
+  workerId        String?
+  errorCode       String?
+  errorMessage    String?
+  errorMetadata   Json?
+  publishedAt     DateTime?
+
+  invoice       Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  processingRun ProcessingRun? @relation(fields: [processingRunId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([invoiceId, createdAt])
+  @@index([status, availableAt])
+  @@index([status, failedAt])
+  @@index([processingRunId])
 }
 
 // ============================================

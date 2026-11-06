@@ -12,10 +12,7 @@ import {
 } from "../utils/file-storage.js";
 
 import { prisma } from "../config/prisma.js";
-
-import {
-    orchestrateInvoiceProcessing,
-} from "../services/invoice-orchestration.service.js";
+import { enqueueInvoiceProcessing } from "../services/invoice-job.service.js";
 
 const router = Router();
 
@@ -26,12 +23,11 @@ router.post(
     checkDuplicateFile,
     async (req, res, next) => {
         let permanentFile = null;
+        let invoiceCreated = false;
 
         try {
-            // 1. Move PDF to permanent storage.
             permanentFile = await moveToPermanentStorage(req.file.path);
 
-            // 2. Create invoice record.
             const invoice = await prisma.invoice.create({
                 data: {
                     originalFileName: req.file.originalname,
@@ -48,24 +44,22 @@ router.post(
                 },
             });
 
-            // 3. Start invoice processing.
-            const processing = await orchestrateInvoiceProcessing({
+            invoiceCreated = true;
+
+            const job = await enqueueInvoiceProcessing({
                 invoiceId: invoice.id,
             });
 
-            // 4. Return upload and processing result.
             return res.status(202).json({
                 success: true,
-                message: "Invoice uploaded and processing initiated.",
+                message: "Invoice uploaded and queued for processing.",
                 data: {
                     invoice,
-                    processing,
+                    job,
                 },
             });
-
         } catch (error) {
-            // 5. Cleanup if database insertion fails.
-            if (permanentFile) {
+            if (!invoiceCreated && permanentFile) {
                 await deleteStoredFile(
                     permanentFile.absolutePath
                 ).catch((cleanupError) => {
@@ -74,11 +68,10 @@ router.post(
                         "Permanent file cleanup failed"
                     );
                 });
-            } else if (req.file?.path) {
+            } else if (!permanentFile && req.file?.path) {
                 await fs.unlink(req.file.path).catch(() => {});
             }
 
-            // 6. Handle concurrent duplicate uploads.
             if (error.code === "P2002") {
                 return res.status(409).json({
                     success: false,
@@ -90,7 +83,6 @@ router.post(
         }
     }
 );
-
 
 router.get("/", async (req, res, next) => {
     try {
@@ -160,6 +152,46 @@ router.get("/", async (req, res, next) => {
     }
 });
 
+router.get("/:id/job", async (req, res, next) => {
+    try {
+        const invoice = await prisma.invoice.findUnique({
+            where: { id: req.params.id },
+            select: { id: true },
+        });
+
+        if (!invoice) {
+            return res.status(404).json({
+                success: false,
+                message: "Invoice not found.",
+            });
+        }
+
+        const job = await prisma.invoiceProcessingJob.findFirst({
+            where: { invoiceId: invoice.id },
+            orderBy: { createdAt: "desc" },
+            select: {
+                id: true,
+                status: true,
+                attempt: true,
+                maxAttempts: true,
+                queuedAt: true,
+                startedAt: true,
+                completedAt: true,
+                failedAt: true,
+                errorCode: true,
+                errorMessage: true,
+            },
+        });
+
+        return res.status(200).json({
+            success: true,
+            data: job,
+        });
+    } catch (error) {
+        next(error);
+    }
+});
+
 router.post("/:id/retry", async (req, res, next) => {
     try {
         const invoice = await prisma.invoice.findUnique({
@@ -180,31 +212,41 @@ router.post("/:id/retry", async (req, res, next) => {
             });
         }
 
-       const absolutePath = resolve(
+        const absolutePath = resolve(
             process.cwd(),
             "storage",
             invoice.filePath
         );
 
-await fs.access(absolutePath);
-
         await fs.access(absolutePath);
 
-        await prisma.invoice.update({
-            where: { id: invoice.id },
-            data: { status: "UPLOADED" },
+        const updated = await prisma.invoice.updateMany({
+            where: {
+                id: invoice.id,
+                status: "FAILED",
+            },
+            data: {
+                status: "UPLOADED",
+            },
         });
 
-        const processing = await orchestrateInvoiceProcessing({
+        if (updated.count === 0) {
+            return res.status(409).json({
+                success: false,
+                message: "Invoice status changed. Please retry again.",
+            });
+        }
+
+        const job = await enqueueInvoiceProcessing({
             invoiceId: invoice.id,
         });
 
-        return res.status(200).json({
-            success: processing.success,
-            message: "Invoice retry processing completed.",
+        return res.status(202).json({
+            success: true,
+            message: "Invoice retry queued for processing.",
             data: {
                 invoiceId: invoice.id,
-                processing,
+                job,
             },
         });
     } catch (error) {
@@ -218,6 +260,5 @@ await fs.access(absolutePath);
         next(error);
     }
 });
-
 
 export default router;
