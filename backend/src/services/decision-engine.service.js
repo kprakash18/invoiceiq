@@ -142,14 +142,14 @@ export function evaluateInvoiceDecision({
     }
 
     // 7. PO matching
-    if (poMatch?.status !== "MATCHED") {
+   if (poMatch?.status !== "MATCHED") {
         return createDecision(
             "NEEDS_REVIEW",
-            `PO_${poMatch?.status ?? "UNKNOWN"}`,
+            poMatch?.reason ?? `PO_${poMatch?.status ?? "UNKNOWN"}`,
             poMatch?.message ??
                 "Purchase order could not be reliably matched."
         );
-    }
+   }
 
     // 8. Currency matching
     if (currencyMatch?.status !== "MATCHED") {

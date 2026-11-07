@@ -1,5 +1,6 @@
-
+import { deriveAllocationBasis } from "./po-allocation.service.js";
 import prisma from "../config/prisma.js";
+import { Prisma } from "@prisma/client";
 
 import { evaluateInvoiceDecision } from "./decision-engine.service.js";
 import { detectDuplicateInvoice } from "./duplicate-detection.service.js";
@@ -9,6 +10,7 @@ import { matchPurchaseOrder } from "./po-matching.service.js";
 export function verifyAllocationIntegrity({
     invoice,
     purchaseOrderId,
+    taxTreatment,
 }) {
     if (!invoice.items.length || !invoice.allocations.length) {
         return {
@@ -73,9 +75,26 @@ export function verifyAllocationIntegrity({
             };
         }
 
+        const allocationBasis = deriveAllocationBasis(
+            item,
+            taxTreatment
+        );
+
+        if (!allocationBasis.success) {
+            return {
+                valid: false,
+                message: `Invoice line "${item.description}" has invalid tax values: ${allocationBasis.message}`,
+            };
+        }
+
         if (
             !allocated.quantity.equals(item.quantity) ||
-            !allocated.amount.equals(item.lineTotal)
+            !allocated.amount.equals(
+                allocationBasis.lineAmount.toDecimalPlaces(
+                    2,
+                    Prisma.Decimal.ROUND_HALF_UP
+                )
+            )
         ) {
             return {
                 valid: false,
@@ -271,6 +290,7 @@ export async function finalizeInvoiceDecision({
         const allocationIntegrity = verifyAllocationIntegrity({
             invoice,
             purchaseOrderId: poMatch.purchaseOrder?.id,
+            taxTreatment: normalizedData.taxTreatment,
         });
 
         const allocationIsValid =

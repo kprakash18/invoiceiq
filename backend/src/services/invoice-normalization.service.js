@@ -17,6 +17,21 @@ const parseAmount = (value) => {
     return Number.isFinite(amount) ? amount : null;
 };
 
+const parseTaxRate = (value) => {
+    const unwrapped = unwrap(value);
+
+    if (unwrapped === null || unwrapped === undefined || unwrapped === "") {
+        return null;
+    }
+
+    const normalized =
+        typeof unwrapped === "string"
+            ? unwrapped.trim().replace(/%$/, "")
+            : unwrapped;
+
+    return parseAmount(normalized);
+};
+
 const parseDate = (value) => {
     if (!value) return null;
 
@@ -64,6 +79,7 @@ const normalizeLineItem = (item) => ({
     description: unwrap(item.description),
     quantity: parseAmount(unwrap(item.quantity)),
     unitPrice: parseAmount(unwrap(item.unit_price)),
+    taxRate: parseTaxRate(item.tax_rate),
     taxAmount: parseAmount(unwrap(item.tax_amount)),
     lineTotal: parseAmount(unwrap(item.line_total)),
 });

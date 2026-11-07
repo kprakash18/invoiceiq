@@ -12,3 +12,5 @@ __pycache__/
 uploads/
 storage/
 .DS_Store
+# Local database backups
+*.dump

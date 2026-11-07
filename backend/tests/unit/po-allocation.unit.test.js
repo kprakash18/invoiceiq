@@ -388,57 +388,191 @@ describe("PO Allocation Unit Tests", () => {
         });
     });
 
-    describe("5. Tax Treatment Policy", () => {
-        it("records TAX_INCLUSIVE_PRICE_BASIS_MISMATCH when invoice taxTreatment is INCLUSIVE", async () => {
-            const po = createMockPO({
-                poNumber: "PO-2026-1003",
-                items: [
-                    { id: "poi-1", itemCode: "PAP-001", description: "A4 Paper Ream", quantity: 1, unitPrice: 250 },
-                ],
-            });
-            const db = createMockDb(po);
-
-            // GOS-INV-2026-1106-005 case: Printed price ₹295, GST ₹45, INCLUSIVE tax treatment
-            const plan = await buildAllocationPlanWithClient(db, {
-                purchaseOrderId: "po-1",
-                invoiceLines: [
-                    { id: "inv-l1", itemCode: "PAP-001", description: "A4 Paper Ream", quantity: 1, unitPrice: 295 },
-                ],
-                taxTreatment: "INCLUSIVE",
-            });
-
-            assert.equal(plan.success, false);
-            assert.equal(plan.status, "NEEDS_REVIEW");
-            assert.equal(plan.issues.length, 1);
-            assert.equal(plan.issues[0].reason, "TAX_INCLUSIVE_PRICE_BASIS_MISMATCH");
-            assert.equal(plan.allocations.length, 0); // Must never create partial/unverified allocations
+   describe("5. Tax Treatment Policy", () => {
+    it("allocates inclusive-tax invoice using its derived pre-tax price", async () => {
+        const po = createMockPO({
+            poNumber: "PO-2026-1003",
+            items: [
+                {
+                    id: "poi-1",
+                    itemCode: "PAP-001",
+                    description: "A4 Paper Ream",
+                    quantity: 1,
+                    unitPrice: 250,
+                },
+            ],
         });
 
-        it("succeeds when invoice taxTreatment is EXCLUSIVE and pre-tax price matches PO", async () => {
-            const po = createMockPO({
-                poNumber: "PO-2026-1003",
-                items: [
-                    { id: "poi-1", itemCode: "PAP-001", description: "A4 Paper Ream", quantity: 1, unitPrice: 250 },
-                ],
-            });
-            const db = createMockDb(po);
+        const db = createMockDb(po);
 
-            // GOS-INV-2026-1106-004 case: Pre-tax price ₹250, EXCLUSIVE tax treatment
-            const plan = await buildAllocationPlanWithClient(db, {
-                purchaseOrderId: "po-1",
-                invoiceLines: [
-                    { id: "inv-l1", itemCode: "PAP-001", description: "A4 Paper Ream", quantity: 1, unitPrice: 250 },
-                ],
-                taxTreatment: "EXCLUSIVE",
-            });
-
-            assert.equal(plan.success, true);
-            assert.equal(plan.status, "VALID");
-            assert.equal(plan.allocations.length, 1);
-            assert.equal(plan.allocations[0].allocatedAmount.toString(), "250");
+        // Gross price ₹295 = ₹250 + ₹45 GST (18%).
+        const plan = await buildAllocationPlanWithClient(db, {
+            purchaseOrderId: "po-1",
+            invoiceLines: [
+                {
+                    id: "inv-l1",
+                    itemCode: "PAP-001",
+                    description: "A4 Paper Ream",
+                    quantity: 1,
+                    unitPrice: 295,
+                    taxRate: 18,
+                    taxAmount: 45,
+                    lineTotal: 295,
+                },
+            ],
+            taxTreatment: "INCLUSIVE",
         });
+
+        assert.equal(plan.success, true);
+        assert.equal(plan.status, "VALID");
+        assert.equal(plan.allocations.length, 1);
+        assert.equal(
+            plan.allocations[0].allocatedAmount.toString(),
+            "250"
+        );
     });
 
+    it("rounds repeating-decimal inclusive tax allocation to currency precision", async () => {
+        const po = createMockPO({
+            items: [{
+                id: "poi-1",
+                itemCode: "PAP-001",
+                quantity: 1,
+                unitPrice: 84.75,
+            }],
+        });
+
+        const plan = await buildAllocationPlanWithClient(createMockDb(po), {
+            purchaseOrderId: "po-1",
+            invoiceLines: [{
+                id: "inv-l1",
+                itemCode: "PAP-001",
+                quantity: 1,
+                unitPrice: 100,
+                taxRate: 18,
+                taxAmount: 15.25,
+                lineTotal: 100,
+            }],
+            taxTreatment: "INCLUSIVE",
+        });
+
+        assert.equal(plan.success, true);
+        assert.equal(plan.allocations[0].allocatedAmount.toString(), "84.75");
+    });
+
+    it("rejects inclusive-tax invoice when tax rate is missing", async () => {
+        const po = createMockPO({
+            items: [
+                {
+                    id: "poi-1",
+                    itemCode: "PAP-001",
+                    quantity: 1,
+                    unitPrice: 250,
+                },
+            ],
+        });
+
+        const db = createMockDb(po);
+
+        const plan = await buildAllocationPlanWithClient(db, {
+            purchaseOrderId: "po-1",
+            invoiceLines: [
+                {
+                    id: "inv-l1",
+                    itemCode: "PAP-001",
+                    quantity: 1,
+                    unitPrice: 295,
+                    taxAmount: 45,
+                    lineTotal: 295,
+                },
+            ],
+            taxTreatment: "INCLUSIVE",
+        });
+
+        assert.equal(plan.success, false);
+        assert.equal(plan.status, "NEEDS_REVIEW");
+        assert.equal(
+            plan.issues[0].reason,
+            "INVALID_TAX_INCLUSIVE_LINE"
+        );
+        assert.equal(plan.allocations.length, 0);
+    });
+
+    it("rejects inclusive-tax invoice when tax amount does not reconcile", async () => {
+        const po = createMockPO({
+            items: [
+                {
+                    id: "poi-1",
+                    itemCode: "PAP-001",
+                    quantity: 1,
+                    unitPrice: 250,
+                },
+            ],
+        });
+
+        const db = createMockDb(po);
+
+        const plan = await buildAllocationPlanWithClient(db, {
+            purchaseOrderId: "po-1",
+            invoiceLines: [
+                {
+                    id: "inv-l1",
+                    itemCode: "PAP-001",
+                    quantity: 1,
+                    unitPrice: 295,
+                    taxRate: 18,
+                    taxAmount: 50,
+                    lineTotal: 295,
+                },
+            ],
+            taxTreatment: "INCLUSIVE",
+        });
+
+        assert.equal(plan.success, false);
+        assert.equal(plan.status, "NEEDS_REVIEW");
+        assert.equal(
+            plan.issues[0].reason,
+            "INVALID_TAX_INCLUSIVE_LINE"
+        );
+        assert.equal(plan.allocations.length, 0);
+    });
+
+    it("succeeds when invoice taxTreatment is EXCLUSIVE and pre-tax price matches PO", async () => {
+        const po = createMockPO({
+            poNumber: "PO-2026-1003",
+            items: [
+                {
+                    id: "poi-1",
+                    itemCode: "PAP-001",
+                    description: "A4 Paper Ream",
+                    quantity: 1,
+                    unitPrice: 250,
+                },
+            ],
+        });
+
+        const db = createMockDb(po);
+
+        const plan = await buildAllocationPlanWithClient(db, {
+            purchaseOrderId: "po-1",
+            invoiceLines: [
+                {
+                    id: "inv-l1",
+                    itemCode: "PAP-001",
+                    description: "A4 Paper Ream",
+                    quantity: 1,
+                    unitPrice: 250,
+                },
+            ],
+            taxTreatment: "EXCLUSIVE",
+        });
+
+        assert.equal(plan.success, true);
+        assert.equal(plan.status, "VALID");
+        assert.equal(plan.allocations.length, 1);
+        assert.equal(plan.allocations[0].allocatedAmount.toString(), "250");
+    });
+});
     describe("6. Line Total & Amount Validation", () => {
         it("detects INCONSISTENT_LINE_TOTAL when line total does not match quantity * unit price", async () => {
             const po = createMockPO({

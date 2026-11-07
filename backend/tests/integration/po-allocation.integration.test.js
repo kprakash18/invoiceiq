@@ -128,7 +128,14 @@ describe("PO Allocation Integration Tests", () => {
                         itemCode: l.itemCode ?? null,
                         quantity: decimal(l.quantity),
                         unitPrice: decimal(l.unitPrice),
-                        lineTotal: decimal(l.lineTotal ?? Number(l.quantity) * Number(l.unitPrice)),
+                        taxRate:
+                            l.taxRate == null ? null : decimal(l.taxRate),
+                        taxAmount:
+                            l.taxAmount == null ? null : decimal(l.taxAmount),
+                        lineTotal: decimal(
+                            l.lineTotal ??
+                                Number(l.quantity) * Number(l.unitPrice)
+                        ),
                     })),
                 },
             },
@@ -240,10 +247,51 @@ describe("PO Allocation Integration Tests", () => {
         assert.equal(dbAllocations.length, 0);
     });
 
-    it("5. Tax-inclusive invoice against tax-exclusive PO returns TAX_INCLUSIVE_PRICE_BASIS_MISMATCH", async () => {
+    it("5. Allocates tax-inclusive invoice against tax-exclusive PO", async () => {
         const invoice = await createTestInvoice({
             lines: [
-                { itemCode: "ITM-001", description: "Test Widget A", quantity: 1, unitPrice: 295 },
+                {
+                    itemCode: "ITM-001",
+                    description: "Test Widget A",
+                    quantity: 1,
+                    unitPrice: 295,
+                    taxRate: 18,
+                    taxAmount: 45,
+                    lineTotal: 295,
+                },
+            ],
+        });
+
+        const result = await persistPOAllocations({
+            invoiceId: invoice.id,
+            purchaseOrderId: testPO.id,
+            taxTreatment: "INCLUSIVE",
+        });
+
+        assert.equal(result.success, true);
+        assert.equal(result.status, "ALLOCATED");
+        assert.equal(result.allocationCount, 1);
+
+        const dbAllocations = await prisma.pOAllocation.findMany({
+            where: { invoiceId: invoice.id },
+        });
+
+        assert.equal(dbAllocations.length, 1);
+        assert.equal(dbAllocations[0].allocatedQuantity.toString(), "1");
+        assert.equal(dbAllocations[0].allocatedAmount.toString(), "250");
+    });
+
+    it("5a. Rejects tax-inclusive invoice when tax rate is missing", async () => {
+        const invoice = await createTestInvoice({
+            lines: [
+                {
+                    itemCode: "ITM-001",
+                    description: "Test Widget A",
+                    quantity: 1,
+                    unitPrice: 295,
+                    taxAmount: 45,
+                    lineTotal: 295,
+                },
             ],
         });
 
@@ -255,12 +303,13 @@ describe("PO Allocation Integration Tests", () => {
 
         assert.equal(result.success, false);
         assert.equal(result.status, "NEEDS_REVIEW");
-        assert.equal(result.issues[0].reason, "TAX_INCLUSIVE_PRICE_BASIS_MISMATCH");
+        assert.equal(result.issues[0].reason, "INVALID_TAX_INCLUSIVE_LINE");
 
-        const dbAllocations = await prisma.pOAllocation.findMany({
+        const allocations = await prisma.pOAllocation.findMany({
             where: { invoiceId: invoice.id },
         });
-        assert.equal(dbAllocations.length, 0);
+
+        assert.equal(allocations.length, 0);
     });
 
     it("6. Invoice with mismatched currency fails with CURRENCY_MISMATCH", async () => {
@@ -309,22 +358,37 @@ describe("PO Allocation Integration Tests", () => {
         assert.equal(dbAllocations.length, 0);
     });
 
-    it("8. Duplicate invoice detection prevents allocation", async () => {
-        const invoice = await createTestInvoice({
-            invoiceNumber: "INV-DUP-TEST-001",
-            lines: [
-                { itemCode: "ITM-001", description: "Test Widget A", quantity: 1, unitPrice: 250 },
-            ],
+    it("8. Detects formatting variations but keeps vendor scope", async () => {
+        const original = await createTestInvoice({
+            invoiceNumber: "INV-2026-001",
         });
 
-        // Simulate an existing invoice with same number and vendor
+        const duplicate = await createTestInvoice({
+            invoiceNumber: "inv 2026 001",
+        });
+
         const dupCheck = await detectDuplicateInvoice({
             vendorId: testVendor.id,
-            invoiceNumber: "INV-DUP-TEST-001",
-            excludeInvoiceId: "other-id",
+            invoiceNumber: duplicate.invoiceNumber,
+            excludeInvoiceId: duplicate.id,
         });
 
         assert.equal(dupCheck.isDuplicate, true);
+        assert.equal(dupCheck.reason, "DUPLICATE_VENDOR_INVOICE_NUMBER");
+        assert.equal(dupCheck.duplicateInvoice.id, original.id);
+
+        const otherVendorInvoice = await createTestInvoice({
+            invoiceNumber: "INV2026001",
+            vendorId: testVendor2.id,
+        });
+
+        const otherVendorCheck = await detectDuplicateInvoice({
+            vendorId: testVendor2.id,
+            invoiceNumber: otherVendorInvoice.invoiceNumber,
+            excludeInvoiceId: otherVendorInvoice.id,
+        });
+
+        assert.equal(otherVendorCheck.isDuplicate, false);
     });
 
     it("9. Corrected invoice returns SKIPPED with 0 allocations", async () => {
@@ -689,5 +753,109 @@ describe("PO Allocation Integration Tests", () => {
         });
         assert.equal(updatedPO.status, "CLOSED");
     });
+
+    it("15. Split PO invoices cannot cumulatively exceed ordered quantity", async () => {
+    const splitPO = await prisma.purchaseOrder.create({
+        data: {
+            poNumber: `PO-SPLIT-${Date.now()}`,
+            vendorId: testVendor.id,
+            currency: "INR",
+            totalAmount: decimal(100000),
+            issueDate: new Date("2026-11-01"),
+            status: "OPEN",
+            items: {
+                create: [{
+                    id: `POLINE-SPLIT-${Date.now()}`,
+                    itemCode: "SPLIT-001",
+                    description: "Industrial Component",
+                    quantity: decimal(100),
+                    unitPrice: decimal(1000),
+                }],
+            },
+        },
+        include: { items: true },
+    });
+
+    createdPOIds.push(splitPO.id);
+
+    const poLine = splitPO.items[0];
+
+    async function allocateInvoice(invoiceNumber, quantity) {
+        const invoice = await createTestInvoice({
+            invoiceNumber,
+            lines: [{
+                itemCode: "SPLIT-001",
+                description: "Industrial Component",
+                quantity,
+                unitPrice: 1000,
+            }],
+        });
+
+        const result = await persistPOAllocations({
+            invoiceId: invoice.id,
+            purchaseOrderId: splitPO.id,
+            taxTreatment: "EXCLUSIVE",
+        });
+
+        return { invoice, result };
+    }
+
+    // First invoice: 30 of 100
+    const first = await allocateInvoice("SPLIT-INV-001", 30);
+
+    assert.equal(first.result.success, true);
+    assert.equal(first.result.status, "ALLOCATED");
+
+    // Second invoice: another 40; cumulative allocation = 70
+    const second = await allocateInvoice("SPLIT-INV-002", 40);
+
+    assert.equal(second.result.success, true);
+    assert.equal(second.result.status, "ALLOCATED");
+
+    const previousAllocations = await prisma.pOAllocation.findMany({
+        where: {
+            invoiceId: { in: [first.invoice.id, second.invoice.id] },
+        },
+    });
+
+    assert.equal(previousAllocations.length, 2);
+
+    const previousQuantity = previousAllocations.reduce(
+        (sum, allocation) =>
+            sum.plus(allocation.allocatedQuantity),
+        decimal(0),
+    );
+
+    assert.equal(previousQuantity.toString(), "70");
+
+    // Third invoice requests 35, but only 30 remain
+    const third = await allocateInvoice("SPLIT-INV-003", 35);
+
+    assert.equal(third.result.success, false);
+    assert.equal(third.result.status, "NEEDS_REVIEW");
+    assert.equal(third.result.issues[0].reason, "QUANTITY_EXCEEDED");
+
+    // Failed allocation must create no records
+    const thirdAllocations = await prisma.pOAllocation.findMany({
+        where: { invoiceId: third.invoice.id },
+    });
+
+    assert.equal(thirdAllocations.length, 0);
+
+    // Earlier successful allocations must remain unchanged
+    const finalAllocations = await prisma.pOAllocation.findMany({
+        where: {
+            invoiceId: { in: [first.invoice.id, second.invoice.id] },
+        },
+    });
+
+    const finalQuantity = finalAllocations.reduce(
+        (sum, allocation) =>
+            sum.plus(allocation.allocatedQuantity),
+        decimal(0),
+    );
+
+    assert.equal(finalQuantity.toString(), "70");
+});
 });
 

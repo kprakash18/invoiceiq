@@ -233,6 +233,7 @@ export async function persistInvoiceExtraction({
                             unitPrice: toDecimalString(item.unitPrice),
                             taxAmount: toDecimalString(item.taxAmount),
                             lineTotal: toDecimalString(item.lineTotal),
+                            taxRate: toDecimalString(item.taxRate),
                         })),
                     });
                 }

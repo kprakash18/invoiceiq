@@ -36,7 +36,7 @@ describe("Regression Verification Tests", () => {
         assert.deepEqual(allocResult.issues, []);
     });
 
-    it("Verifies GOS-INV-2026-1106-005 (tax-inclusive ₹295 mismatch) in DB", async () => {
+    it("Verifies GOS-INV-2026-1106-005 (historical tax-inclusive mismatch) in DB", async () => {
         const invoice = await prisma.invoice.findFirst({
             where: { invoiceNumber: "GOS-INV-2026-1106-005" },
             include: {
@@ -99,5 +99,25 @@ describe("Regression Verification Tests", () => {
         assert.equal(corrected.processingRuns[0]?.decision?.outcome, "NEEDS_REVIEW");
         assert.equal(corrected.processingRuns[0]?.decision?.reason, "CORRECTED_INVOICE_REQUIRES_REVIEW");
     });
+
+    it("returns NEEDS_REVIEW with PO_NUMBER_MISSING when no explicit PO is available", () => {
+    const decision = evaluateInvoiceDecision({
+        extraction: { success: true },
+        validation: { success: true, results: [] },
+        duplicate: { isDuplicate: false, reason: "NO_DUPLICATE_FOUND" },
+        vendorMatch: { status: "MATCHED" },
+        poMatch: {
+            status: "PO_NOT_PROVIDED",
+            reason: "PO_NUMBER_MISSING",
+            message: "No explicit purchase order number was extracted.",
+        },
+        currencyMatch: { status: "UNKNOWN" },
+        allocation: { status: "SKIPPED" },
+        documentType: "INVOICE",
+    });
+
+    assert.equal(decision.outcome, "NEEDS_REVIEW");
+    assert.equal(decision.reason, "PO_NUMBER_MISSING");
+});
 });
 

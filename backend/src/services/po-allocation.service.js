@@ -1,3 +1,4 @@
+
 import { prisma } from "../config/prisma.js";
 import { Prisma } from "@prisma/client";
 
@@ -22,6 +23,86 @@ const decimal = (value) => new Prisma.Decimal(value);
 
 // Allow a maximum 2% variance from the PO price/amount.
 const PO_AMOUNT_TOLERANCE = new Prisma.Decimal("0.02");
+const TAX_AMOUNT_TOLERANCE = new Prisma.Decimal("0.05");
+
+export function deriveAllocationBasis(invoiceLine, taxTreatment) {
+    try {
+        const quantity = decimal(invoiceLine.quantity);
+        const unitPrice = decimal(invoiceLine.unitPrice);
+
+        if (
+            !quantity.isFinite() ||
+            !unitPrice.isFinite() ||
+            quantity.lte(0) ||
+            unitPrice.lt(0)
+        ) {
+            throw new Error("Invoice quantity or unit price is invalid.");
+        }
+
+        if (taxTreatment !== "INCLUSIVE") {
+            return {
+                success: true,
+                unitPrice,
+                lineAmount: quantity.mul(unitPrice),
+            };
+        }
+
+        if (
+            invoiceLine.taxRate == null ||
+            invoiceLine.taxAmount == null ||
+            invoiceLine.lineTotal == null
+        ) {
+            throw new Error(
+                "Inclusive tax requires tax rate, tax amount and line total."
+            );
+        }
+
+        const taxRate = decimal(invoiceLine.taxRate);
+        const taxAmount = decimal(invoiceLine.taxAmount);
+        const lineTotal = decimal(invoiceLine.lineTotal);
+
+        if (
+            !taxRate.isFinite() ||
+            taxRate.lte(0) ||
+            taxRate.gt(100) ||
+            !taxAmount.isFinite() ||
+            taxAmount.lt(0) ||
+            !lineTotal.isFinite() ||
+            lineTotal.lt(0)
+        ) {
+            throw new Error("Inclusive tax values are invalid.");
+        }
+
+        const grossTotal = quantity.mul(unitPrice);
+
+        const netUnitPrice = unitPrice.div(
+            decimal(1).plus(taxRate.div(100))
+        );
+
+        const netTotal = quantity.mul(netUnitPrice);
+        const expectedTax = grossTotal.minus(netTotal);
+
+        if (
+            lineTotal.minus(grossTotal).abs().gt(TAX_AMOUNT_TOLERANCE) ||
+            taxAmount.minus(expectedTax).abs().gt(TAX_AMOUNT_TOLERANCE)
+        ) {
+            throw new Error(
+                "Inclusive tax amount or line total does not reconcile with the derived pre-tax amount."
+            );
+        }
+
+        return {
+            success: true,
+            unitPrice: netUnitPrice,
+            lineAmount: netTotal,
+        };
+    } catch (error) {
+        return {
+            success: false,
+            message: error.message,
+        };
+    }
+}
 
 export async function buildAllocationPlanWithClient(
     db,
@@ -152,8 +233,26 @@ export async function buildAllocationPlanWithClient(
             continue;
         }
 
-        // Validate line total if provided
-        if (invoiceLine.lineTotal != null) {
+        // Derive the comparable pre-tax allocation basis.
+        const allocationBasis = deriveAllocationBasis(
+            invoiceLine,
+            normalizedTaxTreatment
+        );
+
+        if (!allocationBasis.success) {
+            issues.push({
+                invoiceLineId: invoiceLine.id,
+                reason: "INVALID_TAX_INCLUSIVE_LINE",
+                message: allocationBasis.message,
+            });
+            continue;
+        }
+
+        // Validate line total for non-inclusive invoices.
+        if (
+            normalizedTaxTreatment !== "INCLUSIVE" &&
+            invoiceLine.lineTotal != null
+        ) {
             try {
                 const lineTotal = decimal(invoiceLine.lineTotal);
                 const calculatedTotal = quantity.mul(unitPrice);
@@ -233,27 +332,20 @@ export async function buildAllocationPlanWithClient(
         const balance = candidates[0];
         const { item } = balance;
 
-        // Tax treatment & price validation
-        if (normalizedTaxTreatment === "INCLUSIVE") {
-            // An inclusive invoice unit price cannot be directly matched to a tax-exclusive PO price basis.
-            issues.push({
-                invoiceLineId: invoiceLine.id,
-                reason: "TAX_INCLUSIVE_PRICE_BASIS_MISMATCH",
-                message:
-                    "Invoice uses inclusive tax treatment, but its printed unit price cannot be directly matched to a tax-exclusive PO price. Manual verification of the price basis is required.",
-            });
-            continue;
-        }
+        // Compare normalized pre-tax unit price against PO unit price.
+        const allocationUnitPrice = allocationBasis.unitPrice;
 
-        // For EXCLUSIVE or UNKNOWN: compare pre-tax unit price against PO unit price
-        const priceDifference = unitPrice.minus(item.unitPrice).abs();
+        const priceDifference = allocationUnitPrice
+            .minus(item.unitPrice)
+            .abs();
+
         const allowedPriceDifference = item.unitPrice.mul(PO_AMOUNT_TOLERANCE);
 
         if (priceDifference.gt(allowedPriceDifference)) {
             issues.push({
                 invoiceLineId: invoiceLine.id,
                 reason: "UNIT_PRICE_MISMATCH",
-                message: `Invoice unit price (${unitPrice}) differs from PO unit price (${item.unitPrice}) by more than the allowed 2% tolerance.`,
+                message: `Invoice pre-tax unit price (${allocationUnitPrice}) differs from PO unit price (${item.unitPrice}) by more than the allowed 2% tolerance.`,
             });
             continue;
         }
@@ -272,7 +364,10 @@ export async function buildAllocationPlanWithClient(
             continue;
         }
 
-        const allocatedAmount = quantity.mul(unitPrice);
+        const allocatedAmount = allocationBasis.lineAmount.toDecimalPlaces(
+            2,
+            Prisma.Decimal.ROUND_HALF_UP
+        );
 
         // Check whether the amount overage is within 2% of the remaining PO amount
         const amountOverage = allocatedAmount.minus(balance.remainingAmount);
@@ -384,16 +479,34 @@ export async function persistPOAllocations({
                         };
                     }
 
-                    // 3. Document classification check
-                    let docType = documentType;
-                    if (!docType) {
-                        const run = await tx.processingRun.findFirst({
-                            where: { invoiceId },
-                            orderBy: { attempt: "desc" },
-                            select: { normalizedData: true },
-                        });
-                        docType = run?.normalizedData?.documentType ?? "INVOICE";
-                    }
+                    // 3. Load processing metadata and resolve document/tax treatment.
+                    const run = await tx.processingRun.findFirst({
+                        where: { invoiceId },
+                        orderBy: { attempt: "desc" },
+                        select: { normalizedData: true },
+                    });
+
+                    const docType =
+                        documentType ??
+                        run?.normalizedData?.documentType ??
+                        "INVOICE";
+
+                    const validTaxTreatments = [
+                        "INCLUSIVE",
+                        "EXCLUSIVE",
+                        "UNKNOWN",
+                    ];
+
+                    const extractedTaxTreatment =
+                        run?.normalizedData?.taxTreatment;
+
+                    const resolvedTaxTreatment = validTaxTreatments.includes(
+                        taxTreatment
+                    )
+                        ? taxTreatment
+                        : validTaxTreatments.includes(extractedTaxTreatment)
+                          ? extractedTaxTreatment
+                          : "UNKNOWN";
 
                     if (
                         docType === "CREDIT_NOTE" ||
@@ -543,193 +656,206 @@ export async function persistPOAllocations({
                         };
                     }
 
-// 10. Idempotency & existing allocation validation
+                    // 10. Idempotency & existing allocation validation
+                    const existingAllocations = await tx.pOAllocation.findMany({
+                        where: { invoiceId },
+                        include: {
+                            poLineItem: {
+                                select: {
+                                    id: true,
+                                    poId: true,
+                                    itemCode: true,
+                                    description: true,
+                                },
+                            },
+                        },
+                    });
 
-    const existingAllocations = await tx.pOAllocation.findMany({
-        where: { invoiceId },
-        include: {
-            poLineItem: {
-                select: {
-                    id: true,
-                    poId: true,
-                    itemCode: true,
-                    description: true,
-                },
-            },
-        },
-    });
+                    if (existingAllocations.length > 0) {
+                        const issues = [];
 
-if (existingAllocations.length > 0) {
-    const issues = [];
+                        if (invoice.poId !== purchaseOrderId) {
+                            issues.push({
+                                reason: "PO_CONFLICT",
+                                message: "Existing allocations do not match the invoice PO.",
+                            });
+                        }
 
-    if (invoice.poId !== purchaseOrderId) {
-        issues.push({
-            reason: "PO_CONFLICT",
-            message: "Existing allocations do not match the invoice PO.",
-        });
-    }
+                        // Fetch every PO line, not just lines with existing allocations.
+                        const poLines = await tx.pOLineItem.findMany({
+                            where: { poId: purchaseOrderId },
+                            select: {
+                                id: true,
+                                poId: true,
+                                itemCode: true,
+                                description: true,
+                            },
+                        });
 
-    // Fetch every PO line, not just lines with existing allocations.
-    const poLines = await tx.pOLineItem.findMany({
-        where: { poId: purchaseOrderId },
-        select: {
-            id: true,
-            poId: true,
-            itemCode: true,
-            description: true,
-        },
-    });
+                        const invoiceLineMap = new Map(
+                            invoice.items.map((line) => [line.id, line])
+                        );
 
-    const invoiceLineMap = new Map(
-        invoice.items.map((line) => [line.id, line])
-    );
+                        const allocationMap = new Map();
 
-    const allocationMap = new Map();
+                        for (const allocation of existingAllocations) {
+                            const line = invoiceLineMap.get(
+                                allocation.invoiceLineItemId
+                            );
 
-    for (const allocation of existingAllocations) {
-        const line = invoiceLineMap.get(
-            allocation.invoiceLineItemId
-        );
+                            const poLine = allocation.poLineItem;
 
-        const poLine = allocation.poLineItem;
+                            if (
+                                !line ||
+                                allocation.purchaseOrderId !== purchaseOrderId ||
+                                !poLine ||
+                                poLine.poId !== purchaseOrderId
+                            ) {
+                                issues.push({
+                                    invoiceLineItemId: allocation.invoiceLineItemId,
+                                    reason: "INVALID_EXISTING_ALLOCATION",
+                                    message:
+                                        "An existing allocation has an invalid relationship.",
+                                });
+                                continue;
+                            }
 
-        if (
-            !line ||
-            allocation.purchaseOrderId !== purchaseOrderId ||
-            !poLine ||
-            poLine.poId !== purchaseOrderId
-        ) {
-            issues.push({
-                invoiceLineItemId: allocation.invoiceLineItemId,
-                reason: "INVALID_EXISTING_ALLOCATION",
-                message:
-                    "An existing allocation has an invalid relationship.",
-            });
-            continue;
-        }
+                            const invoiceItemCode = normalizeItemCode(line.itemCode);
+                            const invoiceDescription = normalizeDescription(
+                                line.description
+                            );
 
-        const invoiceItemCode = normalizeItemCode(line.itemCode);
-        const invoiceDescription = normalizeDescription(
-            line.description
-        );
+                            // Match using the same priority as the allocation planner.
+                            let candidates = [];
 
-        // Match using the same priority as the allocation planner.
-        let candidates = [];
+                            if (invoiceItemCode) {
+                                candidates = poLines.filter(
+                                    (item) =>
+                                        normalizeItemCode(item.itemCode) ===
+                                        invoiceItemCode
+                                );
+                            }
 
-        if (invoiceItemCode) {
-            candidates = poLines.filter(
-                (item) =>
-                    normalizeItemCode(item.itemCode) === invoiceItemCode
-            );
-        }
+                            if (candidates.length === 0 && invoiceDescription) {
+                                candidates = poLines.filter(
+                                    (item) =>
+                                        normalizeDescription(item.description) ===
+                                        invoiceDescription
+                                );
+                            }
 
-        if (candidates.length === 0 && invoiceDescription) {
-            candidates = poLines.filter(
-                (item) =>
-                    normalizeDescription(item.description) ===
-                    invoiceDescription
-            );
-        }
+                            if (candidates.length === 0) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "PO_LINE_NOT_FOUND",
+                                    message:
+                                        "No matching PO line exists for the invoice item.",
+                                });
+                                continue;
+                            }
 
-        if (candidates.length === 0) {
-            issues.push({
-                invoiceLineItemId: line.id,
-                reason: "PO_LINE_NOT_FOUND",
-                message:
-                    "No matching PO line exists for the invoice item.",
-            });
-            continue;
-        }
+                            if (candidates.length > 1) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "AMBIGUOUS_PO_LINE",
+                                    message:
+                                        "Multiple PO lines match the invoice item.",
+                                });
+                                continue;
+                            }
 
-        if (candidates.length > 1) {
-            issues.push({
-                invoiceLineItemId: line.id,
-                reason: "AMBIGUOUS_PO_LINE",
-                message:
-                    "Multiple PO lines match the invoice item.",
-            });
-            continue;
-        }
+                            if (candidates[0].id !== poLine.id) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "INVALID_EXISTING_ALLOCATION",
+                                    message:
+                                        "Existing allocation references a PO line that does not match the planner's selected line.",
+                                });
+                                continue;
+                            }
 
-        if (candidates[0].id !== poLine.id) {
-            issues.push({
-                invoiceLineItemId: line.id,
-                reason: "INVALID_EXISTING_ALLOCATION",
-                message:
-                    "Existing allocation references a PO line that does not match the planner's selected line.",
-            });
-            continue;
-        }
+                            const current = allocationMap.get(line.id) || {
+                                quantity: decimal(0),
+                                amount: decimal(0),
+                            };
 
-        const current = allocationMap.get(line.id) || {
-            quantity: decimal(0),
-            amount: decimal(0),
-        };
+                            current.quantity = current.quantity.plus(
+                                allocation.allocatedQuantity
+                            );
 
-        current.quantity = current.quantity.plus(
-            allocation.allocatedQuantity
-        );
+                            current.amount = current.amount.plus(
+                                allocation.allocatedAmount
+                            );
 
-        current.amount = current.amount.plus(
-            allocation.allocatedAmount
-        );
+                            allocationMap.set(line.id, current);
+                        }
 
-        allocationMap.set(line.id, current);
-    }
+                        // Verify complete quantity and amount coverage.
+                        for (const line of invoice.items) {
+                            const allocated = allocationMap.get(line.id);
 
-    // Verify complete quantity and amount coverage.
-    for (const line of invoice.items) {
-        const allocated = allocationMap.get(line.id);
+                            if (!allocated) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "INCOMPLETE_EXISTING_ALLOCATION",
+                                    message: "Invoice line has no valid existing allocation.",
+                                });
+                                continue;
+                            }
 
-        if (!allocated) {
-            issues.push({
-                invoiceLineItemId: line.id,
-                reason: "INCOMPLETE_EXISTING_ALLOCATION",
-                message: "Invoice line has no valid existing allocation.",
-            });
-            continue;
-        }
+                            const expectedQuantity = decimal(line.quantity);
 
-        const expectedQuantity = decimal(line.quantity);
-        const expectedAmount = expectedQuantity.mul(
-            decimal(line.unitPrice)
-        );
+                            const allocationBasis = deriveAllocationBasis(
+                                line,
+                                resolvedTaxTreatment
+                            );
 
-        if (
-            !allocated.quantity.eq(expectedQuantity) ||
-            allocated.amount.minus(expectedAmount).abs().gt("0.01")
-        ) {
-            issues.push({
-                invoiceLineItemId: line.id,
-                reason: "INCONSISTENT_EXISTING_ALLOCATION",
-                message:
-                    "Existing allocation quantity or amount does not match the invoice line.",
-            });
-        }
-    }
+                            if (!allocationBasis.success) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "INVALID_TAX_INCLUSIVE_LINE",
+                                    message: allocationBasis.message,
+                                });
+                                continue;
+                            }
 
-    if (issues.length > 0) {
-        return {
-            success: false,
-            status: "NEEDS_REVIEW",
-            requiresReview: true,
-            message:
-                "Existing allocations require manual verification.",
-            issues,
-            allocations: [],
-        };
-    }
+                            const expectedAmount = allocationBasis.lineAmount;
 
-    return {
-        success: true,
-        status: "ALLOCATED",
-        requiresReview: false,
-        message:
-            "Invoice lines are already fully allocated to this purchase order.",
-        allocationCount: existingAllocations.length,
-        allocations: existingAllocations,
-    };
-}
+                            if (
+                                !allocated.quantity.eq(expectedQuantity) ||
+                                allocated.amount.minus(expectedAmount).abs().gt("0.01")
+                            ) {
+                                issues.push({
+                                    invoiceLineItemId: line.id,
+                                    reason: "INCONSISTENT_EXISTING_ALLOCATION",
+                                    message:
+                                        "Existing allocation quantity or amount does not match the invoice line.",
+                                });
+                            }
+                        }
+
+                        if (issues.length > 0) {
+                            return {
+                                success: false,
+                                status: "NEEDS_REVIEW",
+                                requiresReview: true,
+                                message:
+                                    "Existing allocations require manual verification.",
+                                issues,
+                                allocations: [],
+                            };
+                        }
+
+                        return {
+                            success: true,
+                            status: "ALLOCATED",
+                            requiresReview: false,
+                            message:
+                                "Invoice lines are already fully allocated to this purchase order.",
+                            allocationCount: existingAllocations.length,
+                            allocations: existingAllocations,
+                        };
+                    }
 
                     // 11. PO status eligibility check
                     if (
@@ -757,7 +883,7 @@ if (existingAllocations.length > 0) {
                         purchaseOrderId,
                         invoiceId,
                         invoiceLines: invoice.items,
-                        taxTreatment,
+                        taxTreatment: resolvedTaxTreatment,
                     });
 
                     if (!plan.success) {

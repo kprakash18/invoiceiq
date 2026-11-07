@@ -239,6 +239,7 @@ model InvoiceLineItem {
   unitPrice   Decimal  @db.Decimal(18, 4)
   taxAmount   Decimal? @db.Decimal(18, 2)
   lineTotal   Decimal  @db.Decimal(18, 2)
+  taxRate     Decimal? @db.Decimal(8, 4)
 
   invoice     Invoice        @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
   allocations POAllocation[]
