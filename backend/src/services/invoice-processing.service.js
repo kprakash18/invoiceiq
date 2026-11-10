@@ -4,14 +4,21 @@ import { normalizeInvoiceData } from "./invoice-normalization.service.js";
 import { prisma } from "../config/prisma.js";
 
 import { readFile } from "node:fs/promises";
-import { basename, resolve } from "node:path";
+import { basename, extname, resolve } from "node:path";
 
 const EXTRACTION_SERVICE_URL =
     process.env.EXTRACTION_SERVICE_URL ?? "http://localhost:8000";
 
 const STORAGE_ROOT = resolve(process.cwd(), "storage");
 
-export async function extractInvoiceFromPdf(filePath) {
+const contentTypesByExtension = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+};
+
+export async function extractInvoiceFromFile(filePath) {
     if (!filePath) {
         return {
             success: false,
@@ -23,14 +30,24 @@ export async function extractInvoiceFromPdf(filePath) {
     try {
         const absoluteFilePath = resolve(STORAGE_ROOT, filePath);
         const fileBuffer = await readFile(absoluteFilePath);
+        const extension = extname(filePath).toLowerCase();
+        const contentType = contentTypesByExtension[extension];
+
+        if (!contentType) {
+            return {
+                success: false,
+                stage: "EXTRACTION_SERVICE",
+                error: "Invoice file type is not supported.",
+            };
+        }
 
         const formData = new FormData();
 
-        const pdfBlob = new Blob([fileBuffer], {
-            type: "application/pdf",
+        const invoiceBlob = new Blob([fileBuffer], {
+            type: contentType,
         });
 
-        formData.append("file", pdfBlob, basename(filePath));
+        formData.append("file", invoiceBlob, basename(filePath));
 
         const response = await fetch(
             `${EXTRACTION_SERVICE_URL}/process`,
@@ -63,8 +80,8 @@ export async function extractInvoiceFromPdf(filePath) {
 }
 
 export async function processInvoiceFile(filePath) {
-    // Stage 1: Extract invoice data from PDF
-    const extraction = await extractInvoiceFromPdf(filePath);
+    // Stage 1: Extract invoice data from the uploaded document.
+    const extraction = await extractInvoiceFromFile(filePath);
 
     if (!extraction.success) {
         return {

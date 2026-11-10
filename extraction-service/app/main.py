@@ -10,6 +10,24 @@ app = FastAPI(
     version="1.0.0"
 )
 
+SUPPORTED_PROCESS_TYPES = {
+    "application/pdf": {
+        "suffix": ".pdf",
+        "signatures": [b"%PDF-"],
+        "invalid_message": "Invalid PDF signature",
+    },
+    "image/jpeg": {
+        "suffix": ".jpg",
+        "signatures": [b"\xff\xd8\xff"],
+        "invalid_message": "Invalid JPEG signature",
+    },
+    "image/png": {
+        "suffix": ".png",
+        "signatures": [b"\x89PNG\r\n\x1a\n"],
+        "invalid_message": "Invalid PNG signature",
+    },
+}
+
 @app.get("/health")
 def health_check():
     return {
@@ -190,13 +208,15 @@ async def extract_hybrid_endpoint(
     finally:
         if temp_path and os.path.exists(temp_path):
             os.remove(temp_path)
-from app.invoice_pipeline import process_invoice_pdf
+from app.invoice_pipeline import process_invoice_file
 @app.post("/process")
 async def process_invoice(file: UploadFile = File(...)):
-    if file.content_type != "application/pdf":
+    file_type = SUPPORTED_PROCESS_TYPES.get(file.content_type)
+
+    if not file_type:
         raise HTTPException(
             status_code=400,
-            detail="Only PDF files are supported"
+            detail="Only PDF, JPG, JPEG, and PNG files are supported"
         )
 
     temp_path = None
@@ -204,20 +224,23 @@ async def process_invoice(file: UploadFile = File(...)):
     try:
         content = await file.read()
 
-        if not content.startswith(b"%PDF-"):
+        if not any(
+            content.startswith(signature)
+            for signature in file_type["signatures"]
+        ):
             raise HTTPException(
                 status_code=400,
-                detail="Invalid PDF signature"
+                detail=file_type["invalid_message"]
             )
 
         with tempfile.NamedTemporaryFile(
             delete=False,
-            suffix=".pdf"
+            suffix=file_type["suffix"]
         ) as temp_file:
             temp_file.write(content)
             temp_path = temp_file.name
 
-        result = process_invoice_pdf(temp_path)
+        result = process_invoice_file(temp_path, file.content_type)
 
         return result
 

@@ -3,6 +3,19 @@ import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
 
+const allowedMimeTypes = new Map([
+  ["application/pdf", ".pdf"],
+  ["image/jpeg", ".jpg"],
+  ["image/png", ".png"],
+]);
+
+const allowedExtensions = new Map([
+  [".pdf", "application/pdf"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".png", "image/png"],
+]);
+
 // Temporary upload directory
 const uploadDirectory = path.resolve(
   process.cwd(),
@@ -20,7 +33,10 @@ const storage = multer.diskStorage({
   },
 
   filename: (req, file, cb) => {
-    const uniqueFilename = `${randomUUID()}.pdf`;
+    const extension = path.extname(file.originalname).toLowerCase();
+    const storedExtension =
+      extension === ".jpeg" ? ".jpg" : allowedMimeTypes.get(file.mimetype);
+    const uniqueFilename = `${randomUUID()}${storedExtension}`;
     cb(null, uniqueFilename);
   },
 });
@@ -29,14 +45,15 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   const extension = path.extname(file.originalname).toLowerCase();
 
-  const isPdfExtension = extension === ".pdf";
-  const isPdfMimeType = file.mimetype === "application/pdf";
+  const expectedMimeType = allowedExtensions.get(extension);
+  const isSupportedFile =
+    expectedMimeType && expectedMimeType === file.mimetype;
 
-  if (isPdfExtension && isPdfMimeType) {
+  if (isSupportedFile) {
     return cb(null, true);
   }
 
-  const error = new Error("Only PDF files are allowed.");
+  const error = new Error("Only PDF, JPG, JPEG, and PNG files are allowed.");
   error.status = 400;
 
   cb(error);

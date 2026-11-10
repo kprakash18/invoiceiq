@@ -3,10 +3,11 @@ import { ChevronLeft, ChevronRight, ReceiptText } from 'lucide-react'
 import StatusBadge from './StatusBadge'
 import { getInvoices, getApiError } from '../services/invoiceService'
 
-const statuses = ['','PROCESSING', 'NEEDS_REVIEW','FAILED']
+const statuses = ['', 'UPLOADED', 'PROCESSING', 'APPROVED', 'NEEDS_REVIEW', 'REJECTED', 'FAILED']
+const journeyStages = ['PDF', 'Extraction', 'Normalization', 'Validation', 'Vendor', 'Duplicate', 'PO Match', 'Allocation', 'Decision']
 
 const label = (status) =>
-  status ? status.replace('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'All'
+  status ? status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'All'
 
 const formatDate = (date) =>
   date ? new Date(date).toLocaleDateString() : '—'
@@ -76,8 +77,17 @@ function AllInvoices({ initialStatus = '', onOpenInvoice }) {
   return (
     <div className="all-invoices-page">
       <div className="page-heading">
-        <h1>All Invoices</h1>
-        <p>View and track uploaded invoices.</p>
+        <h1>Processing Examples</h1>
+        <p>Select an invoice to inspect extraction, checks, allocation, and decision details.</p>
+      </div>
+
+      <div className="journey-ribbon" aria-label="Invoice processing journey">
+        {journeyStages.map((stage, index) => (
+          <div className="journey-step" key={stage}>
+            <span>{index + 1}</span>
+            <strong>{stage}</strong>
+          </div>
+        ))}
       </div>
 
       <section className="all-invoices-card">
@@ -109,44 +119,59 @@ function AllInvoices({ initialStatus = '', onOpenInvoice }) {
               <thead>
                 <tr>
                   <th>Invoice Number</th>
-                  <th>Filename</th>
                   <th>Vendor</th>
-                  <th>Invoice Date</th>
+                  <th>PO Number</th>
                   <th className="right">Total Amount</th>
-                  <th className="center">Status</th>
-                  <th className="right">Uploaded At</th>
+                  <th className="center">Processing Status</th>
+                  <th className="center">Final Decision</th>
+                  <th>Decision Reason</th>
                 </tr>
               </thead>
               <tbody>
-                {invoices.map((invoice) => (
-                  <tr
-                    key={invoice.id}
-                    onClick={() => onOpenInvoice?.({
-                      id: invoice.id,
-                      invoiceNumber: invoice.invoiceNumber,
-                      vendor: invoice.vendor?.name || '—',
-                      date: formatDate(invoice.invoiceDate),
-                      amount: formatAmount(invoice.totalAmount, invoice.currency),
-                      currency: invoice.currency,
-                      file: invoice.originalFileName,
-                      status: invoice.status,
-                    })}
-                  >
-                    <td className="code-cell emphasized">{invoice.invoiceNumber || '—'}</td>
-                    <td className="code-cell file-cell">{invoice.originalFileName || '—'}</td>
-                    <td>{invoice.vendor?.name || '—'}</td>
-                    <td className="secondary-cell">{formatDate(invoice.invoiceDate)}</td>
-                    <td className="right code-cell emphasized">
-                      {formatAmount(invoice.totalAmount, invoice.currency)}
-                    </td>
-                    <td className="center">
-                      <StatusBadge status={label(invoice.status)} />
-                    </td>
-                    <td className="right code-cell secondary-cell">
-                      {formatDateTime(invoice.createdAt)}
-                    </td>
-                  </tr>
-                ))}
+                {invoices.map((invoice) => {
+                  const run = invoice.processingRuns?.[0]
+                  const decision = run?.decision
+                  const poNumber = invoice.purchaseOrder?.poNumber || run?.normalizedData?.poNumber
+
+                  return (
+                    <tr
+                      key={invoice.id}
+                      onClick={() => onOpenInvoice?.({
+                        id: invoice.id,
+                        invoiceNumber: invoice.invoiceNumber,
+                        vendor: invoice.vendor?.name || '—',
+                        date: formatDate(invoice.invoiceDate),
+                        amount: formatAmount(invoice.totalAmount, invoice.currency),
+                        currency: invoice.currency,
+                        file: invoice.originalFileName,
+                        status: invoice.status,
+                      })}
+                    >
+                      <td>
+                        <div className="invoice-list-id">
+                          <strong>{invoice.invoiceNumber || '—'}</strong>
+                          <span>{invoice.originalFileName || `Uploaded ${formatDateTime(invoice.createdAt)}`}</span>
+                        </div>
+                      </td>
+                      <td>{invoice.vendor?.name || '—'}</td>
+                      <td className="code-cell secondary-cell">
+                        {poNumber || '—'}
+                      </td>
+                      <td className="right code-cell emphasized">
+                        {formatAmount(invoice.totalAmount, invoice.currency)}
+                      </td>
+                      <td className="center">
+                        <StatusBadge status={invoice.status || '—'} />
+                      </td>
+                      <td className="center">
+                        {decision?.outcome ? <StatusBadge status={decision.outcome} /> : <span className="muted-token">—</span>}
+                      </td>
+                      <td className="decision-reason-cell">
+                        {decision?.reason || '—'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           ) : (

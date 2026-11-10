@@ -3,7 +3,7 @@ import { Router } from "express";
 import fs from "node:fs/promises";
 
 import { uploadInvoice } from "../middleware/upload.middleware.js";
-import { validatePdfSignature } from "../middleware/pdf-validation.middleware.js";
+import { validateUploadedFileSignature } from "../middleware/pdf-validation.middleware.js";
 import { checkDuplicateFile } from "../middleware/duplicate-check.middleware.js";
 
 import {
@@ -16,10 +16,17 @@ import { enqueueInvoiceProcessing } from "../services/invoice-job.service.js";
 
 const router = Router();
 
+const fileContentTypes = {
+    ".pdf": "application/pdf",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+};
+
 router.post(
     "/",
     uploadInvoice,
-    validatePdfSignature,
+    validateUploadedFileSignature,
     checkDuplicateFile,
     async (req, res, next) => {
         let permanentFile = null;
@@ -172,7 +179,7 @@ router.get("/", async (req, res, next) => {
             if (!invoice.filePath) {
                 return res.status(404).json({
                     success: false,
-                    message: "Invoice PDF path is missing.",
+                    message: "Invoice file path is missing.",
                 });
             }
 
@@ -192,26 +199,34 @@ router.get("/", async (req, res, next) => {
 
             await fs.access(absolutePath);
 
-           res.setHeader("Content-Type", "application/pdf");
+            const extension = path.extname(absolutePath).toLowerCase();
+            const contentType =
+                fileContentTypes[extension] ?? "application/octet-stream";
+
+            res.setHeader("Content-Type", contentType);
 
             res.setHeader(
                 "Content-Disposition",
                 `inline; filename="${path.basename(invoice.originalFileName || "invoice.pdf")}"`
             );
 
-// Allow the Vite frontend to embed this PDF.
-res.removeHeader("X-Frame-Options");
-res.setHeader(
-    "Content-Security-Policy",
-    "frame-ancestors 'self' http://localhost:5173"
-);
+            // Allow the Vite frontend to embed this source document.
+            res.removeHeader("X-Frame-Options");
+            res.setHeader(
+                "Cross-Origin-Resource-Policy",
+                "cross-origin"
+            );
+            res.setHeader(
+                "Content-Security-Policy",
+                "frame-ancestors 'self' http://localhost:5173"
+            );
 
-return res.sendFile(absolutePath);
+            return res.sendFile(absolutePath);
         } catch (error) {
             if (error.code === "ENOENT") {
                 return res.status(404).json({
                     success: false,
-                    message: "Stored invoice PDF was not found.",
+                    message: "Stored invoice file was not found.",
                 });
             }
 

@@ -2,7 +2,7 @@ import { AlertTriangle, Ban, ReceiptText, RefreshCw, UploadCloud } from 'lucide-
 
 const links = [
   { label: 'Upload Invoice', icon: UploadCloud, view: 'upload' },
-  { label: 'All Invoices', icon: ReceiptText, view: 'all-invoices' },
+  { label: 'Processing Examples', icon: ReceiptText, view: 'all-invoices' },
   { label: 'Needs Review', icon: AlertTriangle, view: 'all-invoices:NEEDS_REVIEW' },
   { label: 'Processing', icon: RefreshCw, view: 'all-invoices:PROCESSING' },
   { label: 'Failed', icon: Ban, view: 'all-invoices:FAILED' },
@@ -15,12 +15,12 @@ function Sidebar({ activeView = 'all-invoices', onNavigate }) {
         <div className="brand-mark">IQ</div>
         <div>
           <div className="brand-name">InvoiceIQ</div>
-          <div className="brand-subtitle">AP Automation</div>
+          <div className="brand-subtitle">Processing Demo</div>
         </div>
       </div>
 
       <div className="sidebar-section">
-        <div className="sidebar-label">Processing Console</div>
+        <div className="sidebar-label">Invoice Journey</div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
           {links.map(({ label, icon: Icon, view }) => {
             const active = activeView === view

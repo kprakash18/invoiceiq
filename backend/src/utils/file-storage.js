@@ -19,7 +19,8 @@ export async function moveToPermanentStorage(tempFilePath) {
 
   await fs.mkdir(destinationDirectory, { recursive: true });
 
-  const storedFileName = `${randomUUID()}.pdf`;
+  const extension = path.extname(tempFilePath).toLowerCase();
+  const storedFileName = `${randomUUID()}${extension}`;
 
   const destinationPath = path.join(
     destinationDirectory,

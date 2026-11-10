@@ -25,8 +25,13 @@ export async function getInvoices(page = 1, limit = 10, status = '') {
   return response.data
 }
 
-export async function getInvoiceById(id) {
-  const response = await api.get(`/invoices/${id}`)
+export async function getInvoiceById(id, options = {}) {
+  const response = await api.get(`/invoices/${id}`, options)
+  return response.data
+}
+
+export async function getInvoiceJob(id, options = {}) {
+  const response = await api.get(`/invoices/${id}/job`, options)
   return response.data
 }
 

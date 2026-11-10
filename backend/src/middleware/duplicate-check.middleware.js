@@ -6,7 +6,7 @@ export async function checkDuplicateFile(req, res, next) {
   if (!req.file) {
     return res.status(400).json({
       success: false,
-      message: "Invoice PDF is required.",
+      message: "Invoice file is required.",
     });
   }
 

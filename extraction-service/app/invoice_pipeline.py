@@ -1,16 +1,26 @@
 from app.hybrid_extractor import extract_hybrid
+from app.image_extractor import extract_text_from_image
 from app.invoice_extractor import extract_invoice_data
 from app.invoice_validator import validate_invoice
 
 
-def process_invoice_pdf(file_path: str) -> dict:
+def process_invoice_file(
+    file_path: str,
+    content_type: str = "application/pdf"
+) -> dict:
     """
-    Process a PDF invoice through hybrid extraction,
+    Process an invoice document through text extraction,
     Gemini structured extraction, and validation.
     """
 
-    # Step 1: Extract text from the PDF
-    pdf_result = extract_hybrid(file_path)
+    is_image = content_type in {"image/jpeg", "image/png"}
+
+    # Step 1: Extract text from the uploaded document
+    pdf_result = (
+        extract_text_from_image(file_path)
+        if is_image
+        else extract_hybrid(file_path)
+    )
 
     if not pdf_result.get("success"):
         return {
@@ -23,7 +33,7 @@ def process_invoice_pdf(file_path: str) -> dict:
         return {
             "success": False,
             "stage": "PDF_EXTRACTION",
-            "error": "No readable text could be extracted from the PDF."
+            "error": "No readable text could be extracted from the uploaded invoice."
         }
 
     # Step 2: Extract structured invoice data
