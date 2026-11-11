@@ -965,7 +965,7 @@ button {
 
 .input-extraction-layout {
   display: grid;
-  grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);
+  grid-template-columns: minmax(0, 0.4fr) minmax(0, 0.6fr);
   gap: 18px;
   align-items: start;
 }
@@ -1006,20 +1006,65 @@ button {
   overflow-wrap: anywhere;
 }
 
+.source-preview-shell {
+  display: grid;
+}
+
+.source-preview-toolbar {
+  min-height: 42px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.source-preview-toolbar button {
+  min-height: 28px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  background: var(--surface);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.source-preview-toolbar button:hover {
+  color: var(--brand-strong);
+  border-color: #b8dcd5;
+  background: var(--brand-soft);
+}
+
+.source-preview-viewport {
+  min-height: 680px;
+  overflow: auto;
+  background: #f0f3f7;
+}
+
 .invoice-source-frame {
   display: block;
   width: 100%;
-  height: 576px;
+  height: 680px;
   border: 0;
   background: #f0f3f7;
+  transform-origin: top center;
 }
 
 .invoice-source-image {
   display: block;
   width: 100%;
-  max-height: 576px;
+  min-height: 680px;
+  max-height: 680px;
   object-fit: contain;
   background: #f0f3f7;
+  transform-origin: top center;
 }
 
 .source-preview-error {
@@ -1039,7 +1084,8 @@ button {
   font-size: 13px;
 }
 
-.extraction-panel {
+.extraction-fields-panel {
+  min-width: 0;
   display: grid;
   gap: 14px;
 }
@@ -1079,6 +1125,33 @@ button {
   background: var(--amber-soft);
 }
 
+.field-table-wrap {
+  max-height: 722px;
+  overflow: auto;
+}
+
+.compact-table {
+  min-width: 0;
+}
+
+.compact-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.compact-table th:first-child {
+  width: 25%;
+}
+
+.compact-table th:nth-child(2) {
+  width: 30%;
+}
+
+.compact-table th:nth-child(3) {
+  width: 45%;
+}
+
 .field-table-wrap,
 .table-wrapper {
   width: 100%;
@@ -1109,6 +1182,11 @@ button {
   white-space: nowrap;
 }
 
+.compact-table th,
+.compact-table td {
+  padding: 15px 16px;
+}
+
 .compact-table td,
 .table-wrapper td {
   padding: 13px;
@@ -1130,8 +1208,13 @@ button {
 }
 
 .compact-table .missing-row td {
-  color: var(--amber);
-  background: #fffaf0;
+  color: var(--muted);
+  background: var(--surface-muted);
+}
+
+.compact-table .missing-row td:first-child {
+  color: var(--text);
+  font-weight: 700;
 }
 
 .evidence-entry {
@@ -1168,6 +1251,59 @@ button {
   border: 1px solid var(--border-soft);
   border-radius: 8px;
   background: #fbfcfe;
+}
+
+.backend-normalized-data {
+  display: grid;
+  gap: 10px;
+  padding-top: 2px;
+  border-top: 1px solid var(--border-soft);
+}
+
+.backend-normalized-data h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 760;
+}
+
+.backend-normalized-data p {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.extraction-metadata {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--border);
+}
+
+.extraction-metadata-item {
+  min-width: 0;
+  padding: 11px 13px;
+  display: grid;
+  gap: 4px;
+  background: var(--surface-muted);
+}
+
+.extraction-metadata-item span {
+  color: var(--light);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.extraction-metadata-item strong {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
 }
 
 .json-details summary {
@@ -1690,8 +1826,13 @@ button {
 
   .invoice-source-frame,
   .invoice-source-image {
-    height: 540px;
-    max-height: 540px;
+    height: 600px;
+    min-height: 600px;
+    max-height: 600px;
+  }
+
+  .source-preview-viewport {
+    min-height: 600px;
   }
 
   .check-grid {
@@ -1832,7 +1973,16 @@ button {
   .invoice-source-frame,
   .invoice-source-image {
     height: 460px;
+    min-height: 460px;
     max-height: 460px;
+  }
+
+  .source-preview-viewport {
+    min-height: 460px;
+  }
+
+  .extraction-metadata {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .facts-grid {

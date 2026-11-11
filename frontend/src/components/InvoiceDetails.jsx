@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   ArrowLeft,
@@ -7,9 +7,12 @@ import {
   Clock,
   FileText,
   LoaderCircle,
+  Maximize2,
   MinusCircle,
   SkipForward,
   XCircle,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react'
 import StatusBadge from './StatusBadge'
 import {
@@ -297,11 +300,11 @@ function EmptyNote({ children }) {
   return <p className="detail-empty">{children}</p>
 }
 
-function JsonDetails({ label, data, defaultOpen = false }) {
+function JsonDetails({ label, data, defaultOpen = true }) {
   if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) return null
 
   return (
-    <details className="json-details" open>
+    <details className="json-details" open={defaultOpen}>
       <summary>
         {label}
         <ChevronDown size={15} />
@@ -505,7 +508,15 @@ function LineItemsTable({ items, currency, evidence }) {
 
 function SourceDocumentPreview({ details, sourceUrl, sourceType }) {
   const [previewErrorSource, setPreviewErrorSource] = useState('')
+  const [zoom, setZoom] = useState(1)
   const previewError = previewErrorSource === sourceUrl
+  const previewContainerRef = useRef(null)
+
+  const resetZoom = () => setZoom(1)
+
+  const expandPreview = () => {
+    previewContainerRef.current?.requestFullscreen?.()
+  }
 
   if (!details.originalFileName) {
     return <EmptyNote>Original invoice file is unavailable.</EmptyNote>
@@ -523,24 +534,40 @@ function SourceDocumentPreview({ details, sourceUrl, sourceType }) {
     )
   }
 
-  if (sourceType.kind === 'image') {
-    return (
-      <img
-        className="invoice-source-image"
-        src={sourceUrl}
-        alt={`Original invoice image: ${details.originalFileName}`}
-        onError={() => setPreviewErrorSource(sourceUrl)}
-      />
-    )
-  }
-
   return (
-    <iframe
-      className="invoice-source-frame"
-      src={sourceUrl}
-      title="Original invoice document"
-      onError={() => setPreviewErrorSource(sourceUrl)}
-    />
+    <div className="source-preview-shell">
+      <div className="source-preview-toolbar" aria-label="Document preview controls">
+        <button type="button" onClick={() => setZoom((value) => Math.min(value + 0.1, 2))} aria-label="Zoom in">
+          <ZoomIn size={15} />
+        </button>
+        <button type="button" onClick={() => setZoom((value) => Math.max(value - 0.1, 0.5))} aria-label="Zoom out">
+          <ZoomOut size={15} />
+        </button>
+        <button type="button" onClick={resetZoom}>Fit to page</button>
+        <button type="button" onClick={expandPreview} aria-label="Expand document preview">
+          <Maximize2 size={15} />
+        </button>
+      </div>
+      <div className="source-preview-viewport" ref={previewContainerRef}>
+        {sourceType.kind === 'image' ? (
+          <img
+            className="invoice-source-image"
+            src={sourceUrl}
+            alt={`Original invoice image: ${details.originalFileName}`}
+            style={{ transform: `scale(${zoom})` }}
+            onError={() => setPreviewErrorSource(sourceUrl)}
+          />
+        ) : (
+          <iframe
+            className="invoice-source-frame"
+            src={sourceUrl}
+            title="Original invoice document"
+            style={{ transform: `scale(${zoom})` }}
+            onError={() => setPreviewErrorSource(sourceUrl)}
+          />
+        )}
+      </div>
+    </div>
   )
 }
 
@@ -584,34 +611,7 @@ function InputExtraction({ details, run, sourceUrl }) {
           />
         </div>
 
-        <div className="extraction-panel">
-          <FieldGrid
-            fields={[
-              {
-                label: 'Source document',
-                value: sourceType.label,
-              },
-              {
-                label: 'Extraction method',
-                value: run?.extractionMethod || details.extractionMethod || '—',
-              },
-              {
-                label: 'Model',
-                value: run?.modelName || '—',
-              },
-              {
-                label: 'Line persistence',
-                value:
-                  normalized.lineItemsPersisted == null
-                    ? '—'
-                    : normalized.lineItemsPersisted
-                      ? 'Persisted'
-                      : 'Not persisted',
-                tone: normalized.lineItemsPersisted === false ? 'warning' : '',
-              },
-            ]}
-          />
-
+        <div className="extraction-fields-panel">
           <div className="field-table-wrap">
             <table className="compact-table">
               <thead>
@@ -635,8 +635,36 @@ function InputExtraction({ details, run, sourceUrl }) {
             </table>
           </div>
 
-          <JsonDetails label="Normalized Data Returned by Backend" data={normalized} defaultOpen />
         </div>
+      </div>
+
+      <div className="extraction-metadata" aria-label="Extraction metadata">
+        {[
+          ['Source document', sourceType.label],
+          ['Extraction method', run?.extractionMethod || details.extractionMethod || '—'],
+          ['Model', run?.modelName || '—'],
+          [
+            'Line persistence',
+            normalized.lineItemsPersisted == null
+              ? '—'
+              : normalized.lineItemsPersisted
+                ? 'Persisted'
+                : 'Not persisted',
+          ],
+        ].map(([label, value]) => (
+          <div className="extraction-metadata-item" key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+          </div>
+        ))}
+      </div>
+
+      <div className="backend-normalized-data">
+        <div>
+          <h3>Backend Normalized Data</h3>
+          <p>Complete normalized payload returned by the backend.</p>
+        </div>
+        <JsonDetails label="View normalized backend response" data={normalized} defaultOpen={false} />
       </div>
 
       <LineItemsTable items={details.items || []} currency={currency} evidence={evidence.lineItems} />
