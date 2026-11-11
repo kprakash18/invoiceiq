@@ -344,68 +344,12 @@ button {
   text-decoration: underline;
 }
 
-.dashboard-page,
 .all-invoices-page,
 .details-page {
   width: min(100%, 1360px);
   margin: 0 auto;
   display: grid;
   gap: 18px;
-}
-
-.dashboard-summary {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.summary-tile {
-  min-width: 0;
-  min-height: 132px;
-  padding: 18px;
-  display: grid;
-  align-content: start;
-  gap: 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--surface);
-  box-shadow: var(--shadow);
-}
-
-.summary-icon {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #cde4df;
-  border-radius: 8px;
-  color: var(--brand-strong);
-  background: var(--brand-soft);
-}
-
-.summary-tile span {
-  color: var(--muted);
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.3;
-}
-
-.summary-tile strong {
-  color: var(--ink);
-  font-family: var(--mono);
-  font-size: 30px;
-  line-height: 1;
-}
-
-.dashboard-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.dashboard-state {
-  margin: 0;
 }
 
 .journey-ribbon {
@@ -1268,7 +1212,7 @@ button {
 
 .check-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 
@@ -1719,10 +1663,6 @@ button {
 }
 
 @media (max-width: 1180px) {
-  .dashboard-summary {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
   .journey-ribbon {
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
@@ -1856,16 +1796,6 @@ button {
 
   .filter-tab {
     white-space: nowrap;
-  }
-
-  .dashboard-summary {
-    grid-template-columns: 1fr;
-  }
-
-  .dashboard-actions,
-  .dashboard-actions .primary-button,
-  .dashboard-actions .secondary-button {
-    width: 100%;
   }
 
   .decision-title-row {

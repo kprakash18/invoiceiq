@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
-import Dashboard from './components/Dashboard'
 import AllInvoices from './components/AllInvoices'
 import UploadInvoice from './components/UploadInvoice'
 import InvoiceDetails from './components/InvoiceDetails'
@@ -10,8 +9,8 @@ import './App.css'
 const parseHashRoute = () => {
   const hash = window.location.hash.replace(/^#\/?/, '')
 
-  if (!hash || hash === 'dashboard') {
-    return { view: 'dashboard', invoice: null }
+  if (!hash) {
+    return { view: 'upload', invoice: null }
   }
 
   if (hash === 'invoices') {
@@ -29,7 +28,7 @@ const parseHashRoute = () => {
       : { view: 'all-invoices', invoice: null }
   }
 
-  return { view: 'dashboard', invoice: null }
+  return { view: 'upload', invoice: null }
 }
 
 const setHashRoute = (route) => {
@@ -46,7 +45,7 @@ function App() {
 
   useEffect(() => {
     if (!window.location.hash) {
-      window.history.replaceState(null, '', '#/dashboard')
+      window.history.replaceState(null, '', '#/upload')
     }
 
     function onHashChange() {
@@ -72,14 +71,6 @@ function App() {
   }, [uploadConfirmation?.invoiceId])
 
   function navigate(view) {
-    if (view === 'dashboard') {
-      setHashRoute('#/dashboard')
-      setActiveView('dashboard')
-      setSelectedInvoice(null)
-      setUploadConfirmation(null)
-      return
-    }
-
     if (view === 'upload') {
       setHashRoute('#/upload')
       setActiveView('upload')
@@ -137,7 +128,7 @@ function App() {
           ) : activeView === 'all-invoices' ? (
             <AllInvoices onOpenInvoice={openInvoice} />
           ) : (
-            <Dashboard onNavigate={navigate} />
+            <UploadInvoice onUploaded={handleUploaded} />
           )}
         </main>
       </div>

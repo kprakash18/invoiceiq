@@ -1,9 +1,8 @@
-import { LayoutDashboard, ReceiptText, UploadCloud } from 'lucide-react'
+import { ReceiptText, UploadCloud } from 'lucide-react'
 
 const links = [
-  { label: 'Dashboard', icon: LayoutDashboard, view: 'dashboard' },
-  { label: 'Invoices', icon: ReceiptText, view: 'all-invoices' },
   { label: 'Upload Invoice', icon: UploadCloud, view: 'upload' },
+  { label: 'Invoices', icon: ReceiptText, view: 'all-invoices' },
 ]
 
 function Sidebar({ activeView = 'all-invoices', onNavigate }) {
