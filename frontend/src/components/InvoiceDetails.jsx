@@ -42,7 +42,7 @@ const stageLabels = {
 }
 
 const formatStatus = (status) =>
-  status ? status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : 'Unavailable'
+  status ? status.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase()) : '—'
 
 const parseValidDate = (date) => {
   if (!date) return null
@@ -176,10 +176,10 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
   if (waitingForDecision) {
     return {
       tone: pollingPaused ? 'warning' : 'processing',
-      title: pollingPaused ? 'Decision data is not available yet' : 'Processing complete, waiting for decision data',
+      title: pollingPaused ? 'Decision data unavailable' : 'Decision pending',
       message: pollingPaused
-        ? 'The worker marked the job complete, but the persisted final decision was not returned after several refresh attempts. Try refreshing this invoice.'
-        : 'The worker marked the job complete, and the page is checking for the persisted decision.',
+        ? 'Refresh this invoice to try again.'
+        : '—',
     }
   }
 
@@ -187,7 +187,7 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
     return {
       tone: 'success',
       title: 'Final decision available',
-      message: decision.explanation || 'The invoice has a persisted final decision.',
+      message: decision.explanation || '—',
     }
   }
 
@@ -196,25 +196,25 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
       return {
         tone: 'processing',
         title: 'Uploaded and queued',
-        message: 'The document was accepted and is waiting for the processing worker.',
+        message: 'Waiting for processing.',
       }
     case 'RUNNING':
       return {
         tone: 'processing',
         title: 'Processing in progress',
-        message: 'Extraction, validation, matching, and decision checks are running.',
+        message: 'Processing checks are running.',
       }
     case 'RETRY_WAIT':
       return {
         tone: 'warning',
         title: 'Processing will retry',
-        message: job.errorMessage || 'A retryable processing issue occurred. The worker will try again.',
+        message: job.errorMessage || 'Retry scheduled.',
       }
     case 'COMPLETED':
       return {
         tone: 'success',
         title: 'Processing job completed',
-        message: 'The processing job completed. The final business decision is being loaded.',
+        message: 'Decision pending.',
       }
     case 'FAILED':
     case 'DEAD_LETTER':
@@ -222,14 +222,14 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
       return {
         tone: 'danger',
         title: `Processing ${formatStatus(job.status)}`,
-        message: job.errorMessage || 'The processing job did not complete successfully.',
+        message: job.errorMessage || '—',
       }
     default:
       if (details?.status === 'UPLOADED') {
         return {
           tone: 'processing',
           title: 'Uploaded',
-          message: 'The document was uploaded. Processing status will appear when the job is available.',
+          message: 'Waiting for processing.',
         }
       }
 
@@ -237,7 +237,7 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
         return {
           tone: 'processing',
           title: 'Processing invoice',
-          message: 'The invoice is being processed.',
+          message: 'Processing checks are running.',
         }
       }
 
@@ -245,14 +245,14 @@ const getJobStatusMessage = ({ job, details, decision, waitingForDecision, polli
         return {
           tone: 'danger',
           title: 'Processing failed',
-          message: 'The invoice could not be processed successfully.',
+          message: '—',
         }
       }
 
       return {
         tone: 'neutral',
         title: 'Processing status unavailable',
-        message: 'No current job status was returned for this invoice.',
+        message: '—',
       }
   }
 }
@@ -330,7 +330,7 @@ function EvidenceValue({ value }) {
 }
 
 function DecisionHeader({ details, decision, run, onBack }) {
-  const vendorName = details.vendor?.name || 'Vendor not matched'
+  const vendorName = details.vendor?.name || '—'
   const currency = details.currency || run?.normalizedData?.currencyCode || 'INR'
   const decisionOutcome = hasFinalDecision(decision) ? decision.outcome : 'Not decided'
 
@@ -369,8 +369,8 @@ function DecisionHeader({ details, decision, run, onBack }) {
         </div>
 
         <div className="decision-summary-text">
-          <span>{decision?.reason || 'Decision not recorded yet'}</span>
-          <p>{decision?.explanation || 'The backend has not returned a final decision for this invoice.'}</p>
+          <span>{decision?.reason || 'Decision pending.'}</span>
+          <p>{decision?.explanation || '—'}</p>
         </div>
       </div>
     </section>
@@ -433,7 +433,7 @@ function ProcessingStatusBanner({
 function ProcessingPipeline({ stages }) {
   return (
     <section className="detail-section">
-      <SectionHeader title="Processing Pipeline" eyebrow="Execution order" />
+      <SectionHeader title="Processing Pipeline" />
 
       {stages.length ? (
         <div className="pipeline-strip">
@@ -454,7 +454,7 @@ function ProcessingPipeline({ stages }) {
           ))}
         </div>
       ) : (
-        <EmptyNote>No processing stages were returned for this invoice.</EmptyNote>
+        <EmptyNote>—</EmptyNote>
       )}
     </section>
   )
@@ -463,7 +463,7 @@ function ProcessingPipeline({ stages }) {
 function LineItemsTable({ items, currency, evidence }) {
   return (
     <div className="subsection">
-      <h3>Extracted Line Items</h3>
+      <h3>Invoice Line Items</h3>
 
       {items.length ? (
         <div className="table-wrapper">
@@ -493,7 +493,7 @@ function LineItemsTable({ items, currency, evidence }) {
           </table>
         </div>
       ) : (
-        <EmptyNote>No persisted line items were returned for this invoice.</EmptyNote>
+        <EmptyNote>—</EmptyNote>
       )}
 
       {evidence && (
@@ -565,7 +565,7 @@ function InputExtraction({ details, run, sourceUrl }) {
 
   return (
     <section className="detail-section">
-      <SectionHeader title="Input and Extraction" eyebrow={`${sourceType.label} to normalized data`}>
+      <SectionHeader title="Input and Extraction">
         <a className="text-link" href={sourceUrl} target="_blank" rel="noreferrer">
           Open source
         </a>
@@ -603,7 +603,7 @@ function InputExtraction({ details, run, sourceUrl }) {
                 label: 'Line persistence',
                 value:
                   normalized.lineItemsPersisted == null
-                    ? 'Unavailable'
+                    ? '—'
                     : normalized.lineItemsPersisted
                       ? 'Persisted'
                       : 'Not persisted',
@@ -616,9 +616,9 @@ function InputExtraction({ details, run, sourceUrl }) {
             <table className="compact-table">
               <thead>
                 <tr>
-                  <th>Extracted Field</th>
+                  <th>Invoice Field</th>
                   <th>Value</th>
-                  <th>Evidence / Note</th>
+                  <th>Evidence</th>
                 </tr>
               </thead>
               <tbody>
@@ -627,7 +627,7 @@ function InputExtraction({ details, run, sourceUrl }) {
                     <td>{label}</td>
                     <td>{value}</td>
                     <td>
-                      <EvidenceValue value={note ?? (value === '—' ? 'Missing or not returned by extraction.' : '—')} />
+                      <EvidenceValue value={note ?? '—'} />
                     </td>
                   </tr>
                 ))}
@@ -661,7 +661,7 @@ function CheckCard({ title, stage, facts }) {
         ))}
       </dl>
 
-      <p>{stage?.message || stage?.error || 'No stage detail was returned by the API.'}</p>
+      <p>{stage?.message || stage?.error || '—'}</p>
       <JsonDetails label="View check metadata" data={stage?.metadata} />
     </article>
   )
@@ -675,7 +675,7 @@ function VendorDuplicateChecks({ details, stages }) {
 
   return (
     <section className="detail-section">
-      <SectionHeader title="Vendor and Duplicate Checks" eyebrow="Business checks" />
+      <SectionHeader title="Vendor and Duplicate Checks" />
 
       <div className="check-grid">
         <CheckCard
@@ -685,7 +685,7 @@ function VendorDuplicateChecks({ details, stages }) {
             ['Matched Vendor', details.vendor?.name || vendorStage?.metadata?.vendorName || '—'],
             ['GSTIN', details.vendor?.taxId || '—'],
             ['Email', details.vendor?.email || '—'],
-            ['Result', vendorStage?.metadata?.result || 'Unavailable'],
+            ['Result', vendorStage?.metadata?.result || '—'],
           ]}
         />
         <CheckCard
@@ -695,12 +695,12 @@ function VendorDuplicateChecks({ details, stages }) {
             [
               'Duplicate Detected',
               duplicateStage?.metadata?.isDuplicate == null
-                ? 'Unavailable'
+                ? '—'
                 : duplicateStage.metadata.isDuplicate
                   ? 'Yes'
                   : 'No',
             ],
-            ['Result', duplicateStage?.metadata?.result || 'Unavailable'],
+            ['Result', duplicateStage?.metadata?.result || '—'],
           ]}
         />
         <CheckCard
@@ -712,12 +712,12 @@ function VendorDuplicateChecks({ details, stages }) {
             [
               'Currency Match',
               poStage?.metadata?.currencyMatches == null
-                ? 'Unavailable'
+                ? '—'
                 : poStage.metadata.currencyMatches
                   ? 'Yes'
                   : 'No',
             ],
-            ['Result', poStage?.metadata?.result || 'Unavailable'],
+            ['Result', poStage?.metadata?.result || '—'],
           ]}
         />
       </div>
@@ -733,7 +733,7 @@ function PurchaseOrderAllocation({ details, run }) {
 
   return (
     <section className="detail-section">
-      <SectionHeader title="PO Matching and Allocation" eyebrow="Invoice lines to PO consumption" />
+      <SectionHeader title="PO Matching and Allocation" />
 
       {po ? (
         <>
@@ -753,19 +753,19 @@ function PurchaseOrderAllocation({ details, run }) {
             <div className="allocation-result-panel">
               <div>
                 <span>Status</span>
-                <strong>{allocationResult?.status || 'Unavailable'}</strong>
+                <strong>{allocationResult?.status || '—'}</strong>
               </div>
               <div>
                 <span>Requires review</span>
                 <strong>
                   {allocationResult?.requiresReview == null
-                    ? 'Unavailable'
+                    ? '—'
                     : allocationResult.requiresReview
                       ? 'Yes'
                       : 'No'}
                 </strong>
               </div>
-              <p>{allocationResult?.message || 'No allocation summary was returned in normalized data.'}</p>
+              <p>{allocationResult?.message || '—'}</p>
             </div>
           </div>
 
@@ -775,7 +775,7 @@ function PurchaseOrderAllocation({ details, run }) {
               {issues.map((issue, index) => (
                 <article className="issue-item" key={`${issue.reason}-${index}`}>
                   <strong>{issue.reason || 'Allocation issue'}</strong>
-                  <p>{issue.message || 'No issue message was returned.'}</p>
+                  <p>{issue.message || '—'}</p>
                   {issue.invoiceLineId && <span>Invoice line: {issue.invoiceLineId}</span>}
                 </article>
               ))}
@@ -839,7 +839,7 @@ function PurchaseOrderAllocation({ details, run }) {
                 </table>
               </div>
             ) : (
-              <EmptyNote>No PO line items were returned by the API.</EmptyNote>
+              <EmptyNote>—</EmptyNote>
             )}
           </div>
         </>
@@ -853,7 +853,7 @@ function PurchaseOrderAllocation({ details, run }) {
 function ValidationSection({ validations }) {
   return (
     <section className="detail-section">
-      <SectionHeader title="Validation" eyebrow="Recorded validation issues" />
+      <SectionHeader title="Validation" />
 
       {validations.length ? (
         <div className="validation-list">
@@ -864,7 +864,7 @@ function ValidationSection({ validations }) {
                 <strong>{result.ruleCode || 'VALIDATION_RULE'}</strong>
                 <span>{result.severity || 'UNKNOWN'}</span>
               </div>
-              <p>{result.message || 'No validation message was returned.'}</p>
+              <p>{result.message || '—'}</p>
               <FieldGrid
                 fields={[
                   { label: 'Field', value: result.field || '—' },
@@ -876,51 +876,18 @@ function ValidationSection({ validations }) {
           ))}
         </div>
       ) : (
-        <EmptyNote>No validation issue records were returned. This UI does not infer passed checks from missing issue rows.</EmptyNote>
+        <EmptyNote>No validation records.</EmptyNote>
       )}
     </section>
   )
 }
 
-function DecisionExplanation({ decision, run, reviews }) {
-  const allocationIssues = run?.normalizedData?.allocationResult?.issues || []
+function DecisionExplanation({ reviews }) {
   const review = reviews?.[0]
 
   return (
     <section className="detail-section">
-      <SectionHeader title="Decision Explanation" eyebrow="Outcome and unresolved items" />
-
-      {decision ? (
-        <div className="decision-explainer">
-          <div>
-            <span>Outcome</span>
-            <StatusBadge status={decision.outcome} />
-          </div>
-          <div>
-            <span>Reason</span>
-            <strong>{decision.reason || '—'}</strong>
-          </div>
-          <div>
-            <span>Policy</span>
-            <strong>{decision.policyVersion ? `v${decision.policyVersion}` : '—'}</strong>
-          </div>
-          <p>{decision.explanation || 'No decision explanation was returned.'}</p>
-        </div>
-      ) : (
-        <EmptyNote>No final decision has been recorded.</EmptyNote>
-      )}
-
-      {allocationIssues.length > 0 && (
-        <div className="issue-list">
-          <h3>Relevant Allocation Issues</h3>
-          {allocationIssues.map((issue, index) => (
-            <article className="issue-item" key={`${issue.reason}-${index}`}>
-              <strong>{issue.reason || 'Issue'}</strong>
-              <p>{issue.message || 'No issue message was returned.'}</p>
-            </article>
-          ))}
-        </div>
-      )}
+      <SectionHeader title="Decision Explanation" />
 
       {review ? (
         <div className="review-note">
@@ -931,7 +898,7 @@ function DecisionExplanation({ decision, run, reviews }) {
           <span>{formatDateTime(review.createdAt)}</span>
         </div>
       ) : (
-        <p className="detail-muted">No human review record was returned for this invoice.</p>
+        <EmptyNote>No review record.</EmptyNote>
       )}
     </section>
   )
@@ -940,7 +907,7 @@ function DecisionExplanation({ decision, run, reviews }) {
 function ProcessingTrace({ run, stages }) {
   return (
     <section className="detail-section">
-      <SectionHeader title="Processing Trace" eyebrow="Detailed stage records" />
+      <SectionHeader title="Processing Trace" />
 
       {run && (
         <FieldGrid
@@ -965,7 +932,7 @@ function ProcessingTrace({ run, stages }) {
                   <strong>{stageLabel(stage.name)}</strong>
                   <span>{formatStatus(stage.status)}</span>
                 </div>
-                <p>{stage.message || stage.error || 'No additional information was returned.'}</p>
+                <p>{stage.message || stage.error || '—'}</p>
                 <div className="stage-times">
                   <span>Started: {formatDateTime(stage.startedAt)}</span>
                   <span>Completed: {formatDateTime(stage.completedAt)}</span>
@@ -978,7 +945,7 @@ function ProcessingTrace({ run, stages }) {
           ))}
         </div>
       ) : (
-        <EmptyNote>No processing trace is available.</EmptyNote>
+        <EmptyNote>No trace available.</EmptyNote>
       )}
     </section>
   )
@@ -1206,7 +1173,7 @@ function InvoiceDetails({ invoice, onBack, uploadConfirmation }) {
       />
       <PurchaseOrderAllocation details={details} run={content.run} />
       <ValidationSection validations={content.validations} />
-      <DecisionExplanation decision={content.decision} run={content.run} reviews={details.reviews} />
+      <DecisionExplanation reviews={details.reviews} />
       <ProcessingTrace run={content.run} stages={content.stages} />
     </div>
   )
