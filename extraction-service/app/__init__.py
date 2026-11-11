@@ -9,10 +9,14 @@ def _configure_tesseract() -> None:
     configured_command = os.getenv("TESSERACT_CMD")
     render_dir = Path(__file__).resolve().parents[1] / ".render"
     appimage = render_dir / "tesseract.AppImage"
+    wrapper = render_dir / "tesseract-wrapper"
     english_data = render_dir / "tessdata" / "eng.traineddata"
 
     if configured_command:
         command = configured_command
+    elif wrapper.is_file():
+        command = str(wrapper)
+        os.environ.setdefault("APPIMAGE_EXTRACT_AND_RUN", "1")
     elif appimage.is_file():
         command = str(appimage)
         os.environ.setdefault("APPIMAGE_EXTRACT_AND_RUN", "1")
