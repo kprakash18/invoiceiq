@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import Sidebar from './components/Sidebar'
 import Header from './components/Header'
+import Dashboard from './components/Dashboard'
 import AllInvoices from './components/AllInvoices'
 import UploadInvoice from './components/UploadInvoice'
 import InvoiceDetails from './components/InvoiceDetails'
@@ -9,7 +10,11 @@ import './App.css'
 const parseHashRoute = () => {
   const hash = window.location.hash.replace(/^#\/?/, '')
 
-  if (!hash || hash === 'invoices') {
+  if (!hash || hash === 'dashboard') {
+    return { view: 'dashboard', invoice: null }
+  }
+
+  if (hash === 'invoices') {
     return { view: 'all-invoices', invoice: null }
   }
 
@@ -24,7 +29,7 @@ const parseHashRoute = () => {
       : { view: 'all-invoices', invoice: null }
   }
 
-  return { view: 'all-invoices', invoice: null }
+  return { view: 'dashboard', invoice: null }
 }
 
 const setHashRoute = (route) => {
@@ -39,12 +44,9 @@ function App() {
   const [selectedInvoice, setSelectedInvoice] = useState(initialRoute.invoice)
   const [uploadConfirmation, setUploadConfirmation] = useState(null)
 
-  const isInvoicesView = activeView.startsWith('all-invoices')
-  const initialStatus = activeView.split(':')[1] || ''
-
   useEffect(() => {
     if (!window.location.hash) {
-      window.history.replaceState(null, '', '#/invoices')
+      window.history.replaceState(null, '', '#/dashboard')
     }
 
     function onHashChange() {
@@ -70,6 +72,14 @@ function App() {
   }, [uploadConfirmation?.invoiceId])
 
   function navigate(view) {
+    if (view === 'dashboard') {
+      setHashRoute('#/dashboard')
+      setActiveView('dashboard')
+      setSelectedInvoice(null)
+      setUploadConfirmation(null)
+      return
+    }
+
     if (view === 'upload') {
       setHashRoute('#/upload')
       setActiveView('upload')
@@ -81,14 +91,6 @@ function App() {
     if (view === 'all-invoices') {
       setHashRoute('#/invoices')
       setActiveView('all-invoices')
-      setSelectedInvoice(null)
-      setUploadConfirmation(null)
-      return
-    }
-
-    if (view.startsWith('all-invoices:')) {
-      window.history.pushState(null, '', '#/invoices')
-      setActiveView(view)
       setSelectedInvoice(null)
       setUploadConfirmation(null)
       return
@@ -132,14 +134,10 @@ function App() {
               uploadConfirmation={uploadConfirmation}
               onBack={() => navigate('all-invoices')}
             />
-          ) : isInvoicesView ? (
-            <AllInvoices
-              key={initialStatus}
-              initialStatus={initialStatus}
-              onOpenInvoice={openInvoice}
-            />
-          ) : (
+          ) : activeView === 'all-invoices' ? (
             <AllInvoices onOpenInvoice={openInvoice} />
+          ) : (
+            <Dashboard onNavigate={navigate} />
           )}
         </main>
       </div>

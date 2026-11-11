@@ -1,11 +1,9 @@
-import { AlertTriangle, Ban, ReceiptText, RefreshCw, UploadCloud } from 'lucide-react'
+import { LayoutDashboard, ReceiptText, UploadCloud } from 'lucide-react'
 
 const links = [
+  { label: 'Dashboard', icon: LayoutDashboard, view: 'dashboard' },
+  { label: 'Invoices', icon: ReceiptText, view: 'all-invoices' },
   { label: 'Upload Invoice', icon: UploadCloud, view: 'upload' },
-  { label: 'Processing Examples', icon: ReceiptText, view: 'all-invoices' },
-  { label: 'Needs Review', icon: AlertTriangle, view: 'all-invoices:NEEDS_REVIEW' },
-  { label: 'Processing', icon: RefreshCw, view: 'all-invoices:PROCESSING' },
-  { label: 'Failed', icon: Ban, view: 'all-invoices:FAILED' },
 ]
 
 function Sidebar({ activeView = 'all-invoices', onNavigate }) {
@@ -23,7 +21,9 @@ function Sidebar({ activeView = 'all-invoices', onNavigate }) {
         <div className="sidebar-label">Invoice Journey</div>
         <nav className="sidebar-nav" aria-label="Primary navigation">
           {links.map(({ label, icon: Icon, view }) => {
-            const active = activeView === view
+            const active =
+              activeView === view ||
+              (view === 'all-invoices' && activeView === 'invoice-details')
 
             return (
               <button

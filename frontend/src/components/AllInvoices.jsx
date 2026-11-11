@@ -3,7 +3,7 @@ import { ChevronLeft, ChevronRight, ReceiptText } from 'lucide-react'
 import StatusBadge from './StatusBadge'
 import { getInvoices, getApiError } from '../services/invoiceService'
 
-const statuses = ['', 'UPLOADED', 'PROCESSING', 'APPROVED', 'NEEDS_REVIEW', 'REJECTED', 'FAILED']
+const statuses = ['', 'APPROVED', 'NEEDS_REVIEW', 'PROCESSING', 'FAILED']
 const journeyStages = ['PDF', 'Extraction', 'Normalization', 'Validation', 'Vendor', 'Duplicate', 'PO Match', 'Allocation', 'Decision']
 
 const label = (status) =>
@@ -77,8 +77,8 @@ function AllInvoices({ initialStatus = '', onOpenInvoice }) {
   return (
     <div className="all-invoices-page">
       <div className="page-heading">
-        <h1>Processing Examples</h1>
-        <p>Select an invoice to inspect extraction, checks, allocation, and decision details.</p>
+        <h1>Invoices</h1>
+        <p>Review every uploaded invoice and filter by processing or decision status.</p>
       </div>
 
       <div className="journey-ribbon" aria-label="Invoice processing journey">

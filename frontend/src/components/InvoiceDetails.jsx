@@ -297,11 +297,11 @@ function EmptyNote({ children }) {
   return <p className="detail-empty">{children}</p>
 }
 
-function JsonDetails({ label, data }) {
+function JsonDetails({ label, data, defaultOpen = false }) {
   if (!data || (typeof data === 'object' && Object.keys(data).length === 0)) return null
 
   return (
-    <details className="json-details">
+    <details className="json-details" open>
       <summary>
         {label}
         <ChevronDown size={15} />
@@ -635,7 +635,7 @@ function InputExtraction({ details, run, sourceUrl }) {
             </table>
           </div>
 
-          <JsonDetails label="View normalized data returned by backend" data={normalized} />
+          <JsonDetails label="Normalized Data Returned by Backend" data={normalized} defaultOpen />
         </div>
       </div>
 

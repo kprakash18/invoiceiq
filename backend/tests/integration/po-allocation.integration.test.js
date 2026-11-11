@@ -4,6 +4,8 @@ import { prisma } from "../../src/config/prisma.js";
 import { Prisma } from "@prisma/client";
 import { persistPOAllocations } from "../../src/services/po-allocation.service.js";
 import { detectDuplicateInvoice } from "../../src/services/duplicate-detection.service.js";
+import { finalizeInvoiceDecision } from "../../src/services/invoice-decision.service.js";
+import { matchPurchaseOrder } from "../../src/services/po-matching.service.js";
 
 const decimal = (v) => new Prisma.Decimal(v);
 
@@ -143,6 +145,76 @@ describe("PO Allocation Integration Tests", () => {
         });
         createdInvoiceIds.push(inv.id);
         return inv;
+    }
+
+    async function createFinalizationRun({
+        invoice,
+        poMatch,
+        allocationResult,
+        taxTreatment = "EXCLUSIVE",
+    }) {
+        return prisma.processingRun.create({
+            data: {
+                invoiceId: invoice.id,
+                status: "IN_PROGRESS",
+                attempt: 1,
+                normalizedData: {
+                    documentType: "INVOICE",
+                    currency: invoice.currency,
+                    currencyCode: invoice.currency,
+                    currencyStatus: "IDENTIFIED",
+                    taxTreatment,
+                    vendor: {
+                        name: testVendor.name,
+                        gstin: testVendor.taxId,
+                    },
+                    poNumber: poMatch.purchaseOrder?.poNumber,
+                    allocationResult,
+                },
+                stages: {
+                    create: [
+                        { name: "PDF_EXTRACTION", status: "COMPLETED" },
+                        { name: "VALIDATION", status: "COMPLETED" },
+                        { name: "VENDOR_MATCHING", status: "COMPLETED" },
+                        { name: "DUPLICATE_CHECK", status: "COMPLETED" },
+                        {
+                            name: "PO_MATCHING",
+                            status: "COMPLETED",
+                            message: poMatch.message,
+                            metadata: {
+                                result: poMatch.status,
+                                reason: poMatch.reason,
+                                purchaseOrderId:
+                                    poMatch.purchaseOrder?.id ?? null,
+                                currencyMatches:
+                                    poMatch.status === "MATCHED" &&
+                                    invoice.currency ===
+                                        poMatch.purchaseOrder.currency,
+                                invoiceCurrency: invoice.currency,
+                                poCurrency:
+                                    poMatch.purchaseOrder?.currency ?? null,
+                            },
+                        },
+                        {
+                            name: "PO_ALLOCATION",
+                            status:
+                                allocationResult.status === "SKIPPED"
+                                    ? "SKIPPED"
+                                    : "COMPLETED",
+                            message: allocationResult.message,
+                            metadata: {
+                                result: allocationResult.status,
+                                requiresReview:
+                                    allocationResult.requiresReview ?? false,
+                                allocationCount:
+                                    allocationResult.allocationCount ?? 0,
+                                issues: allocationResult.issues ?? [],
+                            },
+                        },
+                    ],
+                },
+            },
+        });
     }
 
     it("1. Normal invoice with successful allocation updates PO status to PARTIALLY_INVOICED", async () => {
@@ -754,7 +826,148 @@ describe("PO Allocation Integration Tests", () => {
         assert.equal(updatedPO.status, "CLOSED");
     });
 
-    it("15. Split PO invoices cannot cumulatively exceed ordered quantity", async () => {
+    it("15. Finalization approves an invoice that closes the originally matched PO", async () => {
+        const suffix = Date.now();
+        const poToClose = await prisma.purchaseOrder.create({
+            data: {
+                poNumber: `PO-FINAL-CLOSE-${suffix}`,
+                vendorId: testVendor.id,
+                currency: "INR",
+                totalAmount: decimal(200),
+                issueDate: new Date("2026-11-01"),
+                status: "OPEN",
+                items: {
+                    create: [
+                        {
+                            id: `POLINE-FINAL-CLOSE-${suffix}`,
+                            itemCode: "FINAL-001",
+                            description: "Final Quantity Item",
+                            quantity: decimal(2),
+                            unitPrice: decimal(100),
+                        },
+                    ],
+                },
+            },
+        });
+        createdPOIds.push(poToClose.id);
+
+        const firstInvoice = await createTestInvoice({
+            invoiceNumber: `INV-FINAL-CLOSE-001-${suffix}`,
+            lines: [
+                {
+                    itemCode: "FINAL-001",
+                    description: "Final Quantity Item",
+                    quantity: 2,
+                    unitPrice: 100,
+                },
+            ],
+        });
+
+        const originalMatch = await matchPurchaseOrder({
+            vendorId: testVendor.id,
+            poNumber: poToClose.poNumber,
+        });
+
+        assert.equal(originalMatch.status, "MATCHED");
+
+        const allocation = await persistPOAllocations({
+            invoiceId: firstInvoice.id,
+            purchaseOrderId: poToClose.id,
+            taxTreatment: "EXCLUSIVE",
+        });
+
+        assert.equal(allocation.success, true);
+        assert.equal(allocation.status, "ALLOCATED");
+
+        const closedPO = await prisma.purchaseOrder.findUnique({
+            where: { id: poToClose.id },
+        });
+        assert.equal(closedPO.status, "CLOSED");
+
+        const firstRun = await createFinalizationRun({
+            invoice: firstInvoice,
+            poMatch: originalMatch,
+            allocationResult: {
+                status: allocation.status,
+                requiresReview: allocation.requiresReview,
+                allocationCount: allocation.allocationCount,
+                issues: allocation.issues ?? [],
+                message: allocation.message,
+            },
+        });
+
+        const firstDecision = await finalizeInvoiceDecision({
+            invoiceId: firstInvoice.id,
+            processingRunId: firstRun.id,
+        });
+
+        assert.equal(firstDecision.success, true);
+        assert.equal(firstDecision.status, "DECISION_RECORDED");
+        assert.equal(firstDecision.decision.outcome, "APPROVED");
+        assert.equal(firstDecision.decision.reason, "ALL_CHECKS_PASSED");
+
+        const approvedInvoice = await prisma.invoice.findUnique({
+            where: { id: firstInvoice.id },
+        });
+        assert.equal(approvedInvoice.status, "APPROVED");
+
+        const stillClosedPO = await prisma.purchaseOrder.findUnique({
+            where: { id: poToClose.id },
+        });
+        assert.equal(stillClosedPO.status, "CLOSED");
+
+        const secondInvoice = await createTestInvoice({
+            invoiceNumber: `INV-FINAL-CLOSE-002-${suffix}`,
+            lines: [
+                {
+                    itemCode: "FINAL-001",
+                    description: "Final Quantity Item",
+                    quantity: 1,
+                    unitPrice: 100,
+                },
+            ],
+        });
+
+        const closedMatch = await matchPurchaseOrder({
+            vendorId: testVendor.id,
+            poNumber: poToClose.poNumber,
+        });
+
+        assert.equal(closedMatch.status, "NOT_ELIGIBLE");
+        assert.equal(closedMatch.reason, "PO_STATUS_NOT_ELIGIBLE");
+
+        const secondRun = await createFinalizationRun({
+            invoice: secondInvoice,
+            poMatch: closedMatch,
+            allocationResult: {
+                status: "SKIPPED",
+                requiresReview: false,
+                allocationCount: 0,
+                issues: [],
+                message: "PO matching or currency verification failed.",
+            },
+        });
+
+        const secondDecision = await finalizeInvoiceDecision({
+            invoiceId: secondInvoice.id,
+            processingRunId: secondRun.id,
+        });
+
+        assert.equal(secondDecision.success, true);
+        assert.equal(secondDecision.status, "DECISION_RECORDED");
+        assert.equal(secondDecision.decision.outcome, "NEEDS_REVIEW");
+        assert.equal(
+            secondDecision.decision.reason,
+            "PO_STATUS_NOT_ELIGIBLE"
+        );
+
+        const secondAllocations = await prisma.pOAllocation.count({
+            where: { invoiceId: secondInvoice.id },
+        });
+        assert.equal(secondAllocations, 0);
+    });
+
+    it("16. Split PO invoices cannot cumulatively exceed ordered quantity", async () => {
     const splitPO = await prisma.purchaseOrder.create({
         data: {
             poNumber: `PO-SPLIT-${Date.now()}`,

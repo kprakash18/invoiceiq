@@ -7,6 +7,133 @@ import { detectDuplicateInvoice } from "./duplicate-detection.service.js";
 import { matchVendor } from "./vendor-matching.service.js";
 import { matchPurchaseOrder } from "./po-matching.service.js";
 
+const PO_MATCH_REASON_BY_STATUS = {
+    PO_NOT_PROVIDED: "PO_NUMBER_MISSING",
+    NOT_FOUND: "PO_NOT_REGISTERED",
+    AMBIGUOUS: "MULTIPLE_PO_MATCHES",
+    VENDOR_MISMATCH: "PO_VENDOR_MISMATCH",
+    EXPIRED: "PO_EXPIRED",
+    INSUFFICIENT_INFORMATION: "VENDOR_ID_MISSING",
+};
+
+function getStage(processingRun, name) {
+    return processingRun.stages.find((stage) => stage.name === name);
+}
+
+function getStageMetadata(stage) {
+    return stage?.metadata && typeof stage.metadata === "object"
+        ? stage.metadata
+        : {};
+}
+
+function reasonForPersistedPOMatch(metadata, message) {
+    if (metadata.reason) {
+        return metadata.reason;
+    }
+
+    if (metadata.result === "NOT_ELIGIBLE") {
+        if (message?.includes("earlier than the purchase order issue date")) {
+            return "INVOICE_BEFORE_PO_ISSUE_DATE";
+        }
+
+        return "PO_STATUS_NOT_ELIGIBLE";
+    }
+
+    return (
+        PO_MATCH_REASON_BY_STATUS[metadata.result] ??
+        `PO_${metadata.result ?? "UNKNOWN"}`
+    );
+}
+
+async function reconstructPOMatchFromStage({
+    poMatchingStage,
+    vendorMatch,
+    normalizedData,
+    invoice,
+}) {
+    if (vendorMatch.status !== "MATCHED") {
+        return {
+            status: "INSUFFICIENT_INFORMATION",
+            reason: "VENDOR_ID_MISSING",
+            message: "Vendor must be identified before PO matching.",
+            purchaseOrder: null,
+        };
+    }
+
+    const metadata = getStageMetadata(poMatchingStage);
+
+    if (!metadata.result) {
+        return matchPurchaseOrder({
+            vendorId: vendorMatch.vendor.id,
+            poNumber: normalizedData.poNumber,
+            invoiceDate: invoice.invoiceDate,
+        });
+    }
+
+    if (metadata.result !== "MATCHED") {
+        return {
+            status: metadata.result,
+            reason: reasonForPersistedPOMatch(
+                metadata,
+                poMatchingStage?.message
+            ),
+            message:
+                poMatchingStage?.message ??
+                "Purchase order could not be reliably matched.",
+            purchaseOrder: null,
+        };
+    }
+
+    if (!metadata.purchaseOrderId) {
+        return {
+            status: "NOT_FOUND",
+            reason: "PO_NOT_REGISTERED",
+            message: "The originally matched purchase order is missing.",
+            purchaseOrder: null,
+        };
+    }
+
+    const purchaseOrder = await prisma.purchaseOrder.findUnique({
+        where: { id: metadata.purchaseOrderId },
+        include: {
+            vendor: {
+                select: {
+                    id: true,
+                    name: true,
+                },
+            },
+            items: true,
+        },
+    });
+
+    if (!purchaseOrder) {
+        return {
+            status: "NOT_FOUND",
+            reason: "PO_NOT_REGISTERED",
+            message: "The originally matched purchase order no longer exists.",
+            purchaseOrder: null,
+        };
+    }
+
+    if (purchaseOrder.vendorId !== vendorMatch.vendor.id) {
+        return {
+            status: "VENDOR_MISMATCH",
+            reason: "PO_VENDOR_MISMATCH",
+            message: "The originally matched purchase order belongs to a different vendor.",
+            purchaseOrder,
+        };
+    }
+
+    return {
+        status: "MATCHED",
+        reason: metadata.reason ?? "EXACT_PO_NUMBER_MATCH",
+        message:
+            poMatchingStage?.message ??
+            "Purchase order successfully matched to the invoice vendor.",
+        purchaseOrder,
+    };
+}
+
 export function verifyAllocationIntegrity({
     invoice,
     purchaseOrderId,
@@ -190,9 +317,7 @@ export async function finalizeInvoiceDecision({
         }
 
         const stageStatus = (name) =>
-            processingRun.stages.find(
-                (stage) => stage.name === name
-            )?.status;
+            getStage(processingRun, name)?.status;
 
         // 4. Reconstruct validation from persisted database records.
         const validation = {
@@ -244,20 +369,15 @@ export async function finalizeInvoiceDecision({
                           "Vendor could not be identified for duplicate detection.",
                   };
 
-        // 8. Recheck PO matching.
-        const poMatch =
-            vendorMatch.status === "MATCHED"
-                ? await matchPurchaseOrder({
-                      vendorId: vendorMatch.vendor.id,
-                      poNumber: normalizedData.poNumber,
-                      invoiceDate: invoice.invoiceDate,
-                  })
-                : {
-                      status: "INSUFFICIENT_INFORMATION",
-                      message:
-                          "Vendor must be identified before PO matching.",
-                      purchaseOrder: null,
-                  };
+        // 8. Reconstruct the original PO match from the persisted stage.
+        // A PO can become CLOSED after allocation, so finalization must not
+        // re-run the initial eligibility check against the current status.
+        const poMatch = await reconstructPOMatchFromStage({
+            poMatchingStage: getStage(processingRun, "PO_MATCHING"),
+            vendorMatch,
+            normalizedData,
+            invoice,
+        });
 
         // 9. Verify currency explicitly.
         let currencyMatch = {
