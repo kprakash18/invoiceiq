@@ -337,6 +337,8 @@ model InvoiceProcessingJob {
   completedAt     DateTime?
   failedAt        DateTime?
   lockedAt        DateTime?
+  leaseExpiresAt  DateTime?
+  leaseToken      String?
   workerId        String?
   errorCode       String?
   errorMessage    String?
@@ -351,6 +353,7 @@ model InvoiceProcessingJob {
 
   @@index([invoiceId, createdAt])
   @@index([status, availableAt])
+  @@index([status, leaseExpiresAt])
   @@index([status, failedAt])
   @@index([processingRunId])
 }
