@@ -1,0 +1,482 @@
+{
+  "application": "InvoiceIQ",
+  "suite": "Image-Based Test Suite v2 — high-resolution corrected fixtures",
+  "generated_date": "2026-11-11",
+  "currency": "INR",
+  "source_of_truth": [
+    "TEST INVOICES/invoiceiq_manifest.json",
+    "source PDF visible content",
+    "backend Prisma seed definitions for vendor and PO records"
+  ],
+  "upload_constraints": {
+    "accepted_image_mime_types": [
+      "image/jpeg",
+      "image/png"
+    ],
+    "accepted_extensions": [
+      ".jpg",
+      ".jpeg",
+      ".png"
+    ],
+    "maximum_file_size_bytes": 10485760,
+    "maximum_files_per_request": 1,
+    "image_processing": "/process uses Tesseract OCR for image/jpeg and image/png; OCR results not run for this fixture generation"
+  },
+  "expected_reason_code_notes": {
+    "IMG-04": "Decision engine surfaces allocation issue QUANTITY_EXCEEDED; existing PDF manifest reason PO_OVERBILLING is not a code emitted by current allocation implementation.",
+    "IMG-05": "Missing explicit PO produces PO_NUMBER_MISSING in the current PO matcher/decision engine; existing manifest PO_NOT_FOUND is not the surfaced decision code.",
+    "IMG-08": "Duplicate decision code is DUPLICATE_VENDOR_INVOICE_NUMBER; existing manifest DUPLICATE_INVOICE does not match current decision engine.",
+    "IMG-06": "Verified existing PDF run in PostgreSQL is NEEDS_REVIEW / INVALID_TAX_INCLUSIVE_LINE, despite the primary PDF manifest listing APPROVED / ALL_CHECKS_PASSED. Image manifest follows the observed backend outcome. The allocation implementation emits INVALID_TAX_INCLUSIVE_LINE when inclusive line tax details fail derivation/reconciliation."
+  },
+  "documents": [
+    {
+      "test_id": "IMG-01",
+      "filename": "IMG-01-happy-path.jpg",
+      "source_pdf": "01_Apex_Office_Technologies_HAPPY-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 531488,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Apex Office Technologies",
+      "gstin": "36AABCA1234C1Z5",
+      "invoice_number": "HAPPY-2026-001",
+      "po_number": "PO-HAPPY",
+      "invoice_date": "2026-11-08",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Business Monitor",
+          "quantity": 2,
+          "unit_price": 5000,
+          "taxable_value": 10000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "CGST",
+              "rate": 9,
+              "amount": 900
+            },
+            {
+              "tax": "SGST",
+              "rate": 9,
+              "amount": 900
+            }
+          ]
+        }
+      ],
+      "invoice_total": 11800,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "expected_decision_context": null,
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-01"
+    },
+    {
+      "test_id": "IMG-02",
+      "filename": "IMG-02-cumulative-30.jpg",
+      "source_pdf": "02_Precision_Components_INV-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 455721,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Precision Components Ltd",
+      "gstin": "33AABCP1234C1Z5",
+      "invoice_number": "INV-001",
+      "po_number": "PO-CUMULATIVE",
+      "invoice_date": "2026-11-09",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Industrial Component",
+          "quantity": 30,
+          "unit_price": 1000,
+          "taxable_value": 30000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 5400
+            }
+          ]
+        }
+      ],
+      "invoice_total": 35400,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "expected_decision_context": null,
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-02"
+    },
+    {
+      "test_id": "IMG-03",
+      "filename": "IMG-03-cumulative-40.jpg",
+      "source_pdf": "03_Precision_Components_INV-002.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 471116,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Precision Components Ltd",
+      "gstin": "33AABCP1234C1Z5",
+      "invoice_number": "INV-002",
+      "po_number": "PO-CUMULATIVE",
+      "invoice_date": "2026-11-10",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Industrial Component",
+          "quantity": 40,
+          "unit_price": 1000,
+          "taxable_value": 40000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 7200
+            }
+          ]
+        }
+      ],
+      "invoice_total": 47200,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "expected_decision_context": null,
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-03"
+    },
+    {
+      "test_id": "IMG-04",
+      "filename": "IMG-04-cumulative-overallocation.jpg",
+      "source_pdf": "04_Precision_Components_INV-003_SCANNED.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 411607,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Precision Components Ltd",
+      "gstin": "33AABCP1234C1Z5",
+      "invoice_number": "INV-003",
+      "po_number": "PO-CUMULATIVE",
+      "invoice_date": "2026-11-11",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Industrial Component",
+          "quantity": 35,
+          "unit_price": 1000,
+          "taxable_value": 35000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 6300
+            }
+          ]
+        }
+      ],
+      "invoice_total": 41300,
+      "expected_decision": "NEEDS_REVIEW",
+      "expected_reason_code": "QUANTITY_EXCEEDED",
+      "expected_decision_context": "Assumes upload order IMG-01 through IMG-08; IMG-04 is evaluated after IMG-02 and IMG-03 allocations.",
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-04"
+    },
+    {
+      "test_id": "IMG-05",
+      "filename": "IMG-05-missing-po.jpg",
+      "source_pdf": "05_Unified_Infrastructure_BUNDLE-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 566711,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Unified Infrastructure Ltd",
+      "gstin": "09AABCU1234C1Z5",
+      "invoice_number": "BUNDLE-2026-001",
+      "po_number": null,
+      "invoice_date": "2026-11-10",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Enterprise infrastructure deployment and support services",
+          "quantity": "1 consolidated service engagement",
+          "unit_price": 150000,
+          "taxable_value": 150000,
+          "tax_treatment": "ZERO_AS_SUPPLIED",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "GST (as supplied)",
+              "rate": 0,
+              "amount": 0
+            }
+          ]
+        }
+      ],
+      "invoice_total": 150000,
+      "expected_decision": "NEEDS_REVIEW",
+      "expected_reason_code": "PO_NUMBER_MISSING",
+      "expected_decision_context": null,
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-05"
+    },
+    {
+      "test_id": "IMG-06",
+      "filename": "IMG-06-tax-inclusive.jpg",
+      "source_pdf": "06_Taxwise_Supplies_TAX-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 530691,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Taxwise Supplies Ltd",
+      "gstin": "24AABCT1234C1Z5",
+      "invoice_number": "TAX-2026-001",
+      "po_number": "PO-TAX-INCLUSIVE",
+      "invoice_date": "2026-11-10",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "A4 copier paper ream, 500 sheets",
+          "quantity": 1,
+          "unit_price": 11800,
+          "taxable_value": 10000,
+          "tax_treatment": "INCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 1800
+            }
+          ]
+        }
+      ],
+      "invoice_total": 11800,
+      "expected_decision": "NEEDS_REVIEW",
+      "expected_reason_code": "INVALID_TAX_INCLUSIVE_LINE",
+      "expected_decision_context": "Follows the verified existing PDF 06 processing record. Actual image extraction and runtime processing were not run; verify extracted inclusive-tax fields at runtime.",
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-06"
+    },
+    {
+      "test_id": "IMG-07",
+      "filename": "IMG-07-duplicate-original.jpg",
+      "source_pdf": "07_Duplicate_Test_Supplies_INV-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 479157,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Duplicate Test Supplies Ltd",
+      "gstin": "27AABCD5678E1Z5",
+      "invoice_number": "INV-2026-001",
+      "po_number": "PO-DUPLICATE",
+      "invoice_date": "2026-11-10",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Storage Drive",
+          "quantity": 1,
+          "unit_price": 5000,
+          "taxable_value": 5000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 900
+            }
+          ]
+        }
+      ],
+      "invoice_total": 5900,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "expected_decision_context": null,
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-07"
+    },
+    {
+      "test_id": "IMG-08",
+      "filename": "IMG-08-duplicate-copy.jpg",
+      "source_pdf": "08_Duplicate_Test_Supplies_inv_2026_001_SCANNED.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 401873,
+      "image_dimensions": {
+        "width": 2481,
+        "height": 3508,
+        "unit": "pixels"
+      },
+      "vendor_name": "Duplicate Test Supplies Ltd",
+      "gstin": "27AABCD5678E1Z5",
+      "invoice_number": "inv 2026 001",
+      "po_number": "PO-DUPLICATE",
+      "invoice_date": "2026-11-10",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Storage Drive",
+          "quantity": 1,
+          "unit_price": 5000,
+          "taxable_value": 5000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "IGST",
+              "rate": 18,
+              "amount": 900
+            }
+          ]
+        }
+      ],
+      "invoice_total": 5900,
+      "expected_decision": "NEEDS_REVIEW",
+      "expected_reason_code": "DUPLICATE_VENDOR_INVOICE_NUMBER",
+      "expected_decision_context": "IMG-08 assumes IMG-07 has already been recorded.",
+      "transformation": {
+        "operation": "Rendered directly from the source PDF at 300 DPI to RGB JPEG; JPEG quality 96; 4:4:4 chroma; no content rewrite."
+      },
+      "related_pdf_test_id": "PDF-08"
+    },
+    {
+      "test_id": "IMG-09",
+      "filename": "IMG-09-rotated-invoice.jpg",
+      "source_pdf": "01_Apex_Office_Technologies_HAPPY-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 541290,
+      "image_dimensions": {
+        "width": 3508,
+        "height": 2481,
+        "unit": "pixels"
+      },
+      "vendor_name": "Apex Office Technologies",
+      "gstin": "36AABCA1234C1Z5",
+      "invoice_number": "HAPPY-2026-001",
+      "po_number": "PO-HAPPY",
+      "invoice_date": "2026-11-08",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Business Monitor",
+          "quantity": 2,
+          "unit_price": 5000,
+          "taxable_value": 10000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "CGST",
+              "rate": 9,
+              "amount": 900
+            },
+            {
+              "tax": "SGST",
+              "rate": 9,
+              "amount": 900
+            }
+          ]
+        }
+      ],
+      "invoice_total": 11800,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "requires_runtime_verification": false,
+      "expected_decision_note": "The source scenario baseline was APPROVED and the independent rotated-image runtime run returned APPROVED / ALL_CHECKS_PASSED.",
+      "transformation": {
+        "operation": "Rendered PDF 01 at 300 DPI to RGB JPEG, then rotated 90 degrees clockwise with full canvas retained; JPEG quality 96; 4:4:4 chroma; no crop."
+      },
+      "related_pdf_test_id": "PDF-01",
+      "runtime_verification_status": "COMPLETED: APPROVED / ALL_CHECKS_PASSED"
+    },
+    {
+      "test_id": "IMG-10",
+      "filename": "IMG-10-low-quality-invoice.jpg",
+      "source_pdf": "01_Apex_Office_Technologies_HAPPY-2026-001.pdf",
+      "mime_type": "image/jpeg",
+      "file_size_bytes": 227374,
+      "image_dimensions": {
+        "width": 1861,
+        "height": 2631,
+        "unit": "pixels"
+      },
+      "vendor_name": "Apex Office Technologies",
+      "gstin": "36AABCA1234C1Z5",
+      "invoice_number": "HAPPY-2026-001",
+      "po_number": "PO-HAPPY",
+      "invoice_date": "2026-11-08",
+      "currency": "INR",
+      "items": [
+        {
+          "description": "Business Monitor",
+          "quantity": 2,
+          "unit_price": 5000,
+          "taxable_value": 10000,
+          "tax_treatment": "EXCLUSIVE",
+          "gst_rates_and_amounts": [
+            {
+              "tax": "CGST",
+              "rate": 9,
+              "amount": 900
+            },
+            {
+              "tax": "SGST",
+              "rate": 9,
+              "amount": 900
+            }
+          ]
+        }
+      ],
+      "invoice_total": 11800,
+      "expected_decision": "APPROVED",
+      "expected_reason_code": "ALL_CHECKS_PASSED",
+      "requires_runtime_verification": true,
+      "expected_decision_note": "Runtime outcome must be determined from the corrected v2 image. This controlled degradation retains a legible GSTIN and invoice values.",
+      "transformation": {
+        "operation": "Rendered PDF 01 at 300 DPI; downsampled to 1861x2631 pixels using Lanczos; Gaussian blur radius 0.25 px; JPEG quality 84 with 4:4:4 chroma subsampling. Source content was not altered."
+      },
+      "related_pdf_test_id": "PDF-01"
+    }
+  ],
+  "database_observation": {
+    "verified_read_only": true,
+    "observation_date": "2026-11-11",
+    "invoice_records_present": 8,
+    "records_match": "The eight existing invoice rows reference the eight source PDF fixtures.",
+    "implication": "Run this image suite against a clean seeded test database with prior PDF invoice rows and allocation history cleared; otherwise repeated invoice numbers will be treated as duplicates and PO balances will differ."
+  },
+  "execution_precondition": "Use a clean test database populated with the verified vendor and PO seed records and no prior invoice fixture records. Upload IMG-01 through IMG-08 in order so cumulative allocation and duplicate cases follow the source suite sequence.",
+  "image_extraction_status": "Not yet run for v2 at generation time.",
+  "supersedes": "TEST INVOICES/Test images (preserved as historical evidence)",
+  "generation_method": "All primary images were rendered directly from their source PDFs at 300 DPI to preserve visible business content without rewriting it."
+}

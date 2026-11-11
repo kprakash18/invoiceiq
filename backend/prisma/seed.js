@@ -123,8 +123,8 @@ const purchaseOrders = [
       {
         description: "A4 Paper Ream",
         itemCode: "PAP-TAX-001",
-        quantity: "100",
-        unitPrice: "100",
+        quantity: "1",
+        unitPrice: "10000",
       },
     ],
   },
