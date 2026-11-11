@@ -18,11 +18,7 @@ const ACCEPTED_FILE_TYPES = new Map([
 
 const isAcceptedFile = (nextFile) => {
   const name = nextFile.name.toLowerCase()
-  const hasAcceptedExtension =
-    name.endsWith('.pdf') ||
-    name.endsWith('.jpg') ||
-    name.endsWith('.jpeg') ||
-    name.endsWith('.png')
+  const hasAcceptedExtension = /\.(pdf|jpe?g|png)$/.test(name)
 
   return hasAcceptedExtension && ACCEPTED_FILE_TYPES.has(nextFile.type)
 }

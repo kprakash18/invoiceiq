@@ -182,10 +182,14 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
 
         const data = processed.data;
 
-        let allocationResult = {
+        const skippedAllocation = (message) => ({
             status: "SKIPPED",
-            message: "PO allocation was not attempted.",
-        };
+            message,
+        });
+
+        let allocationResult = skippedAllocation(
+            "PO allocation was not attempted."
+        );
 
         const skippedStage = async (name, message, metadata = {}) => {
             const now = new Date();
@@ -356,11 +360,9 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                                 startedAt: allocationStartedAt,
                             });
                         } else {
-                            allocationResult = {
-                                status: "SKIPPED",
-                                message:
-                                    "PO matching or currency verification failed.",
-                            };
+                            allocationResult = skippedAllocation(
+                                "PO matching or currency verification failed."
+                            );
 
                             await skippedStage(
                                 "PO_ALLOCATION",
@@ -372,11 +374,9 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                             );
                         }
                     } else {
-                        allocationResult = {
-                            status: "SKIPPED",
-                            message:
-                                "Possible duplicate invoice detected.",
-                        };
+                        allocationResult = skippedAllocation(
+                            "Possible duplicate invoice detected."
+                        );
 
                         await skippedStage(
                             "PO_MATCHING",
@@ -389,10 +389,9 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                         );
                     }
                 } else {
-                    allocationResult = {
-                        status: "SKIPPED",
-                        message: "Vendor could not be matched.",
-                    };
+                    allocationResult = skippedAllocation(
+                        "Vendor could not be matched."
+                    );
 
                     await skippedStage(
                         "DUPLICATE_CHECK",
@@ -410,11 +409,9 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                     );
                 }
             } else {
-                allocationResult = {
-                    status: "SKIPPED",
-                    message:
-                        "Validation issues or incomplete line items prevented allocation.",
-                };
+                allocationResult = skippedAllocation(
+                    "Validation issues or incomplete line items prevented allocation."
+                );
 
                 await skippedStage(
                     "VENDOR_MATCHING",
@@ -437,10 +434,9 @@ export async function orchestrateInvoiceProcessing({ invoiceId }) {
                 );
             }
         } else {
-            allocationResult = {
-                status: "SKIPPED",
-                message: `PO allocation is not performed for ${data.documentType ?? "UNKNOWN"} documents.`,
-            };
+            allocationResult = skippedAllocation(
+                `PO allocation is not performed for ${data.documentType ?? "UNKNOWN"} documents.`
+            );
 
             await skippedStage(
                 "VENDOR_MATCHING",

@@ -2,19 +2,10 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
-
-const allowedMimeTypes = new Map([
-  ["application/pdf", ".pdf"],
-  ["image/jpeg", ".jpg"],
-  ["image/png", ".png"],
-]);
-
-const allowedExtensions = new Map([
-  [".pdf", "application/pdf"],
-  [".jpg", "image/jpeg"],
-  [".jpeg", "image/jpeg"],
-  [".png", "image/png"],
-]);
+import {
+  FILE_CONTENT_TYPES,
+  FILE_EXTENSIONS_BY_MIME_TYPE,
+} from "../utils/file-metadata.js";
 
 // Temporary upload directory
 const uploadDirectory = path.resolve(
@@ -35,7 +26,9 @@ const storage = multer.diskStorage({
   filename: (req, file, cb) => {
     const extension = path.extname(file.originalname).toLowerCase();
     const storedExtension =
-      extension === ".jpeg" ? ".jpg" : allowedMimeTypes.get(file.mimetype);
+      extension === ".jpeg"
+        ? ".jpg"
+        : FILE_EXTENSIONS_BY_MIME_TYPE[file.mimetype];
     const uniqueFilename = `${randomUUID()}${storedExtension}`;
     cb(null, uniqueFilename);
   },
@@ -45,7 +38,7 @@ const storage = multer.diskStorage({
 const fileFilter = (req, file, cb) => {
   const extension = path.extname(file.originalname).toLowerCase();
 
-  const expectedMimeType = allowedExtensions.get(extension);
+  const expectedMimeType = FILE_CONTENT_TYPES[extension];
   const isSupportedFile =
     expectedMimeType && expectedMimeType === file.mimetype;
 

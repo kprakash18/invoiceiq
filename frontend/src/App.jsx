@@ -71,22 +71,11 @@ function App() {
   }, [uploadConfirmation?.invoiceId])
 
   function navigate(view) {
-    if (view === 'upload') {
-      setHashRoute('#/upload')
-      setActiveView('upload')
-      setSelectedInvoice(null)
-      setUploadConfirmation(null)
-      return
+    const routes = {
+      upload: '#/upload',
+      'all-invoices': '#/invoices',
     }
-
-    if (view === 'all-invoices') {
-      setHashRoute('#/invoices')
-      setActiveView('all-invoices')
-      setSelectedInvoice(null)
-      setUploadConfirmation(null)
-      return
-    }
-
+    if (routes[view]) setHashRoute(routes[view])
     setActiveView(view)
     setSelectedInvoice(null)
     setUploadConfirmation(null)

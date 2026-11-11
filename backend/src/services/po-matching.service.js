@@ -1,4 +1,5 @@
 import prisma from "../config/prisma.js";
+import { normalizeAlphanumericIdentifier } from "../utils/identifier-normalization.js";
 
 /**
  * Normalize PO numbers for comparison.
@@ -7,16 +8,7 @@ import prisma from "../config/prisma.js";
  * become PO20261001.
  */
 export function normalizePONumber(poNumber) {
-  if (!poNumber || typeof poNumber !== "string") {
-    return null;
-  }
-
-  const normalized = poNumber
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-
-  return normalized || null;
+  return normalizeAlphanumericIdentifier(poNumber);
 }
 
 function isValidDate(value) {

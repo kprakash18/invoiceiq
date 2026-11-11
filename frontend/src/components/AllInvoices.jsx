@@ -23,8 +23,8 @@ const formatAmount = (amount, currency) => {
   })}`.trim()
 }
 
-function AllInvoices({ initialStatus = '', onOpenInvoice }) {
-  const [status, setStatus] = useState(initialStatus)
+function AllInvoices({ onOpenInvoice }) {
+  const [status, setStatus] = useState('')
   const [page, setPage] = useState(1)
   const [invoices, setInvoices] = useState([])
   const [pagination, setPagination] = useState({

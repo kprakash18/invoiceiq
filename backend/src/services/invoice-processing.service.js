@@ -5,18 +5,12 @@ import { prisma } from "../config/prisma.js";
 
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
+import { FILE_CONTENT_TYPES } from "../utils/file-metadata.js";
 
 const EXTRACTION_SERVICE_URL =
     process.env.EXTRACTION_SERVICE_URL ?? "http://localhost:8000";
 
 const STORAGE_ROOT = resolve(process.cwd(), "storage");
-
-const contentTypesByExtension = {
-    ".pdf": "application/pdf",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-};
 
 export async function extractInvoiceFromFile(filePath) {
     if (!filePath) {
@@ -31,7 +25,7 @@ export async function extractInvoiceFromFile(filePath) {
         const absoluteFilePath = resolve(STORAGE_ROOT, filePath);
         const fileBuffer = await readFile(absoluteFilePath);
         const extension = extname(filePath).toLowerCase();
-        const contentType = contentTypesByExtension[extension];
+        const contentType = FILE_CONTENT_TYPES[extension];
 
         if (!contentType) {
             return {

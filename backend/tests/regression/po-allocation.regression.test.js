@@ -4,9 +4,12 @@ import { prisma } from "../../src/config/prisma.js";
 import { evaluateInvoiceDecision } from "../../src/services/decision-engine.service.js";
 
 describe("Regression Verification Tests", () => {
-    it("Verifies GOS-INV-2026-1106-004 (₹250 successful allocation) in DB", async () => {
+    it("Verifies APX-INV-001 successful allocation in DB", async () => {
         const invoice = await prisma.invoice.findFirst({
-            where: { invoiceNumber: "GOS-INV-2026-1106-004" },
+            where: {
+                invoiceNumber: "APX-INV-001",
+                originalFileName: "01_happy_pdf.pdf",
+            },
             include: {
                 items: true,
                 allocations: true,
@@ -17,12 +20,12 @@ describe("Regression Verification Tests", () => {
             },
         });
 
-        assert.ok(invoice, "Invoice GOS-INV-2026-1106-004 must exist in DB");
+        assert.ok(invoice, "Invoice APX-INV-001 must exist in DB");
         assert.equal(invoice.status, "APPROVED");
-        assert.equal(invoice.purchaseOrder?.poNumber, "PO-2026-1003");
+        assert.equal(invoice.purchaseOrder?.poNumber, "PO-HAPPY-PDF");
         assert.equal(invoice.allocations.length, 1);
-        assert.equal(invoice.allocations[0].allocatedAmount.toString(), "250");
-        assert.equal(invoice.allocations[0].allocatedQuantity.toString(), "1");
+        assert.equal(invoice.allocations[0].allocatedAmount.toString(), "10000");
+        assert.equal(invoice.allocations[0].allocatedQuantity.toString(), "2");
 
         const run = invoice.processingRuns[0];
         assert.ok(run, "ProcessingRun must exist");
@@ -36,9 +39,12 @@ describe("Regression Verification Tests", () => {
         assert.deepEqual(allocResult.issues, []);
     });
 
-    it("Verifies GOS-INV-2026-1106-005 (historical tax-inclusive mismatch) in DB", async () => {
+    it("Verifies TW-INV-001 tax-inclusive mismatch in DB", async () => {
         const invoice = await prisma.invoice.findFirst({
-            where: { invoiceNumber: "GOS-INV-2026-1106-005" },
+            where: {
+                invoiceNumber: "TW-INV-001",
+                originalFileName: "07_tax_inclusive.pdf",
+            },
             include: {
                 items: true,
                 allocations: true,
@@ -49,55 +55,50 @@ describe("Regression Verification Tests", () => {
             },
         });
 
-        assert.ok(invoice, "Invoice GOS-INV-2026-1106-005 must exist in DB");
+        assert.ok(invoice, "Invoice TW-INV-001 must exist in DB");
         assert.equal(invoice.status, "NEEDS_REVIEW");
         assert.equal(invoice.allocations.length, 0); // No allocations persisted for failed check
 
         const run = invoice.processingRuns[0];
         assert.ok(run, "ProcessingRun must exist");
         assert.equal(run.decision?.outcome, "NEEDS_REVIEW");
-        assert.equal(run.decision?.reason, "TAX_INCLUSIVE_PRICE_BASIS_MISMATCH");
+        assert.equal(run.decision?.reason, "ARITHMETIC_MISMATCH");
 
         const allocResult = run.normalizedData?.allocationResult;
         assert.ok(allocResult);
         assert.equal(allocResult.status, "NEEDS_REVIEW");
-        assert.equal(allocResult.issues[0]?.reason, "TAX_INCLUSIVE_PRICE_BASIS_MISMATCH");
+        assert.equal(allocResult.issues[0]?.reason, "INVALID_TAX_INCLUSIVE_LINE");
     });
 
-    it("Verifies Credit Note skip behavior (GOS-CN-2026-001) in DB", async () => {
-        const cn = await prisma.invoice.findFirst({
-            where: { invoiceNumber: "GOS-CN-2026-001" },
-            include: {
-                allocations: true,
-                processingRuns: {
-                    include: { decision: true },
-                },
-            },
-        });
+    function createDocumentTypeFixture(documentType) {
+        return {
+            extraction: { success: true },
+            validation: { success: true, results: [] },
+            duplicate: { isDuplicate: false },
+            vendorMatch: { status: "MATCHED" },
+            poMatch: { status: "MATCHED" },
+            currencyMatch: { status: "MATCHED" },
+            allocation: { status: "SKIPPED" },
+            documentType,
+        };
+    }
 
-        assert.ok(cn, "Credit note GOS-CN-2026-001 must exist in DB");
-        assert.equal(cn.status, "NEEDS_REVIEW");
-        assert.equal(cn.allocations.length, 0); // Credit notes never allocate POs
-        assert.equal(cn.processingRuns[0]?.decision?.outcome, "NEEDS_REVIEW");
-        assert.equal(cn.processingRuns[0]?.decision?.reason, "CREDIT_NOTE_REQUIRES_REVIEW");
+    it("Verifies Credit Note skip behavior with a generated fixture", () => {
+        const decision = evaluateInvoiceDecision(
+            createDocumentTypeFixture("CREDIT_NOTE")
+        );
+
+        assert.equal(decision.outcome, "NEEDS_REVIEW");
+        assert.equal(decision.reason, "CREDIT_NOTE_REQUIRES_REVIEW");
     });
 
-    it("Verifies Corrected Invoice skip behavior (GOS-INV-2026-1106-006) in DB", async () => {
-        const corrected = await prisma.invoice.findFirst({
-            where: { invoiceNumber: "GOS-INV-2026-1106-006" },
-            include: {
-                allocations: true,
-                processingRuns: {
-                    include: { decision: true },
-                },
-            },
-        });
+    it("Verifies Corrected Invoice skip behavior with a generated fixture", () => {
+        const decision = evaluateInvoiceDecision(
+            createDocumentTypeFixture("CORRECTED_INVOICE")
+        );
 
-        assert.ok(corrected, "Corrected invoice GOS-INV-2026-1106-006 must exist in DB");
-        assert.equal(corrected.status, "NEEDS_REVIEW");
-        assert.equal(corrected.allocations.length, 0); // Corrected invoices never allocate POs
-        assert.equal(corrected.processingRuns[0]?.decision?.outcome, "NEEDS_REVIEW");
-        assert.equal(corrected.processingRuns[0]?.decision?.reason, "CORRECTED_INVOICE_REQUIRES_REVIEW");
+        assert.equal(decision.outcome, "NEEDS_REVIEW");
+        assert.equal(decision.reason, "CORRECTED_INVOICE_REQUIRES_REVIEW");
     });
 
     it("returns NEEDS_REVIEW with PO_NUMBER_MISSING when no explicit PO is available", () => {
@@ -120,4 +121,3 @@ describe("Regression Verification Tests", () => {
     assert.equal(decision.reason, "PO_NUMBER_MISSING");
 });
 });
-

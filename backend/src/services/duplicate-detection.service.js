@@ -1,5 +1,6 @@
 
 import prisma from "../config/prisma.js";
+import { normalizeAlphanumericIdentifier } from "../utils/identifier-normalization.js";
 
 /**
  * Normalize invoice numbers before comparison.
@@ -7,16 +8,7 @@ import prisma from "../config/prisma.js";
  * INV-001, inv 001 and INV001 become INV001.
  */
 export function normalizeInvoiceNumber(invoiceNumber) {
-  if (!invoiceNumber || typeof invoiceNumber !== "string") {
-    return null;
-  }
-
-  const normalized = invoiceNumber
-    .trim()
-    .toUpperCase()
-    .replace(/[^A-Z0-9]/g, "");
-
-  return normalized || null;
+  return normalizeAlphanumericIdentifier(invoiceNumber);
 }
 
 /**

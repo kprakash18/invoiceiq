@@ -4,6 +4,19 @@ import { invoiceQueue } from "../queues/invoice.queue.js";
 
 const ACTIVE_STATUSES = ["QUEUED", "RUNNING", "RETRY_WAIT"];
 
+async function publishInvoiceJob(job) {
+    await invoiceQueue.add(
+        "process-invoice",
+        { invoiceId: job.invoiceId, processingJobId: job.id },
+        { jobId: job.id }
+    );
+
+    return prisma.invoiceProcessingJob.update({
+        where: { id: job.id },
+        data: { publishedAt: new Date() },
+    });
+}
+
 export async function enqueueInvoiceProcessing({ invoiceId }) {
     const invoice = await prisma.invoice.findUnique({
         where: { id: invoiceId },
@@ -49,16 +62,7 @@ export async function enqueueInvoiceProcessing({ invoiceId }) {
         throw error;
     }
 
-    await invoiceQueue.add(
-        "process-invoice",
-        { invoiceId, processingJobId: job.id },
-        { jobId: job.id }
-    );
-
-    return prisma.invoiceProcessingJob.update({
-        where: { id: job.id },
-        data: { publishedAt: new Date() },
-    });
+    return publishInvoiceJob(job);
 }
 
 
@@ -71,20 +75,8 @@ export async function recoverInvoiceProcessingJobs() {
     });
 
     for (const job of jobs) {
-        await invoiceQueue.add(
-            "process-invoice",
-            {
-                invoiceId: job.invoiceId,
-                processingJobId: job.id,
-            },
-            { jobId: job.id }
-        );
+        await publishInvoiceJob(job);
+    }
 
-    await prisma.invoiceProcessingJob.update({
-        where: { id: job.id },
-        data: { publishedAt: new Date() },
-    });
-}
-
-return jobs.length;
+    return jobs.length;
 }

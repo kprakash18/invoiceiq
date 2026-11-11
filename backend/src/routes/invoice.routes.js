@@ -13,15 +13,107 @@ import {
 
 import { prisma } from "../config/prisma.js";
 import { enqueueInvoiceProcessing } from "../services/invoice-job.service.js";
+import { FILE_CONTENT_TYPES } from "../utils/file-metadata.js";
 
 const router = Router();
 
-const fileContentTypes = {
-    ".pdf": "application/pdf",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".png": "image/png",
-};
+export function buildInvoiceListResponse({
+    invoices,
+    page,
+    limit,
+    total,
+}) {
+    return {
+        success: true,
+        data: invoices,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages: Math.ceil(total / limit),
+        },
+    };
+}
+
+function buildAllocationBreakdown(invoice) {
+    if (!invoice.purchaseOrder) {
+        return;
+    }
+
+    invoice.purchaseOrder.items = invoice.purchaseOrder.items.map(
+        (poItem) => {
+            const previousQuantity = poItem.allocations.reduce(
+                (sum, allocation) =>
+                    sum + Number(allocation.allocatedQuantity),
+                0
+            );
+            const previousAmount = poItem.allocations.reduce(
+                (sum, allocation) =>
+                    sum + Number(allocation.allocatedAmount),
+                0
+            );
+            const currentAllocations = invoice.items.flatMap((item) =>
+                item.allocations
+                    .filter(
+                        (allocation) =>
+                            allocation.poLineItem.id === poItem.id
+                    )
+                    .map((allocation) => ({
+                        invoiceLineItemId: item.id,
+                        invoiceDescription: item.description,
+                        invoiceQuantity: Number(item.quantity),
+                        invoiceUnitPrice: Number(item.unitPrice),
+                        allocatedQuantity: Number(
+                            allocation.allocatedQuantity
+                        ),
+                        allocatedAmount: Number(
+                            allocation.allocatedAmount
+                        ),
+                    }))
+            );
+            const currentQuantity = currentAllocations.reduce(
+                (sum, allocation) =>
+                    sum + allocation.allocatedQuantity,
+                0
+            );
+            const currentAmount = currentAllocations.reduce(
+                (sum, allocation) =>
+                    sum + allocation.allocatedAmount,
+                0
+            );
+
+            return {
+                id: poItem.id,
+                description: poItem.description,
+                itemCode: poItem.itemCode,
+                quantity: poItem.quantity,
+                unitPrice: poItem.unitPrice,
+                allocationBreakdown: {
+                    orderedQuantity: Number(poItem.quantity),
+                    previouslyInvoicedQuantity: previousQuantity,
+                    currentAllocatedQuantity: currentQuantity,
+                    remainingQuantity:
+                        Number(poItem.quantity) -
+                        previousQuantity -
+                        currentQuantity,
+                    previousAllocatedAmount: previousAmount,
+                    currentAllocatedAmount: currentAmount,
+                    poUnitPrice: Number(poItem.unitPrice),
+                    currentAllocations,
+                },
+            };
+        }
+    );
+}
+
+export function buildInvoiceDetailResponse(invoice) {
+    buildAllocationBreakdown(invoice);
+
+    return {
+        success: true,
+        data: invoice,
+    };
+}
 
 router.post(
     "/",
@@ -144,16 +236,9 @@ router.get("/", async (req, res, next) => {
             prisma.invoice.count({ where }),
         ]);
 
-        return res.status(200).json({
-            success: true,
-            data: invoices,
-            pagination: {
-                page,
-                limit,
-                total,
-                totalPages: Math.ceil(total / limit),
-            },
-        });
+        return res.status(200).json(
+            buildInvoiceListResponse({ invoices, page, limit, total })
+        );
     } catch (error) {
         next(error);
     }
@@ -201,7 +286,8 @@ router.get("/", async (req, res, next) => {
 
             const extension = path.extname(absolutePath).toLowerCase();
             const contentType =
-                fileContentTypes[extension] ?? "application/octet-stream";
+                FILE_CONTENT_TYPES[extension] ??
+                "application/octet-stream";
 
             res.setHeader("Content-Type", contentType);
 
@@ -399,85 +485,7 @@ router.get("/:id", async (req, res, next) => {
             });
         }
 
-        // Build read-only allocation breakdown for each PO line.
-        if (invoice.purchaseOrder) {
-            invoice.purchaseOrder.items = invoice.purchaseOrder.items.map(
-                (poItem) => {
-                    const previousQuantity = poItem.allocations.reduce(
-                        (sum, allocation) =>
-                            sum + Number(allocation.allocatedQuantity),
-                        0
-                    );
-
-                    const previousAmount = poItem.allocations.reduce(
-                        (sum, allocation) =>
-                            sum + Number(allocation.allocatedAmount),
-                        0
-                    );
-
-                    const currentAllocations = invoice.items.flatMap((item) =>
-                        item.allocations
-                            .filter(
-                                (allocation) =>
-                                    allocation.poLineItem.id === poItem.id
-                            )
-                            .map((allocation) => ({
-                                invoiceLineItemId: item.id,
-                                invoiceDescription: item.description,
-                                invoiceQuantity: Number(item.quantity),
-                                invoiceUnitPrice: Number(item.unitPrice),
-                                allocatedQuantity: Number(
-                                    allocation.allocatedQuantity
-                                ),
-                                allocatedAmount: Number(
-                                    allocation.allocatedAmount
-                                ),
-                            }))
-                    );
-
-                    const currentQuantity = currentAllocations.reduce(
-                        (sum, allocation) =>
-                            sum + allocation.allocatedQuantity,
-                        0
-                    );
-
-                    const currentAmount = currentAllocations.reduce(
-                        (sum, allocation) =>
-                            sum + allocation.allocatedAmount,
-                        0
-                    );
-
-                    return {
-                        id: poItem.id,
-                        description: poItem.description,
-                        itemCode: poItem.itemCode,
-                        quantity: poItem.quantity,
-                        unitPrice: poItem.unitPrice,
-
-                        allocationBreakdown: {
-                            orderedQuantity: Number(poItem.quantity),
-                            previouslyInvoicedQuantity: previousQuantity,
-                            currentAllocatedQuantity: currentQuantity,
-                            remainingQuantity:
-                                Number(poItem.quantity) -
-                                previousQuantity -
-                                currentQuantity,
-
-                            previousAllocatedAmount: previousAmount,
-                            currentAllocatedAmount: currentAmount,
-
-                            poUnitPrice: Number(poItem.unitPrice),
-                            currentAllocations,
-                        },
-                    };
-                }
-            );
-        }
-
-        return res.status(200).json({
-            success: true,
-            data: invoice,
-        });
+        return res.status(200).json(buildInvoiceDetailResponse(invoice));
     } catch (error) {
         next(error);
     }

@@ -1,4 +1,11 @@
 
+const ALLOWED_DOCUMENT_TYPES = new Set([
+    "INVOICE",
+    "CREDIT_NOTE",
+    "CORRECTED_INVOICE",
+    "UNKNOWN",
+]);
+
 const unwrap = (field) => {
     if (field && typeof field === "object" && "value" in field) {
         return field.value;
@@ -8,7 +15,7 @@ const unwrap = (field) => {
 };
 
 const parseAmount = (value) => {
-    if (value === null || value === undefined || value === "") {
+    if (value == null || value === "") {
         return null;
     }
 
@@ -33,7 +40,9 @@ const parseTaxRate = (value) => {
 };
 
 const parseDate = (value) => {
-    if (!value) return null;
+    if (!value) {
+        return null;
+    }
 
     const parsed = new Date(value);
 
@@ -62,9 +71,11 @@ const normalizeCurrency = (value) => {
         GBP: "GBP",
     };
 
-    if (knownCurrencies[normalized]) {
+    const currencyCode = knownCurrencies[normalized];
+
+    if (currencyCode) {
         return {
-            currencyCode: knownCurrencies[normalized],
+            currencyCode,
             currencyStatus: "IDENTIFIED",
         };
     }
@@ -106,24 +117,15 @@ export function normalizeInvoiceData(invoiceData) {
     const currencyValue = unwrap(invoiceData.currency);
     const currency = normalizeCurrency(currencyValue);
 
-    const allowedDocumentTypes = new Set([
-        "INVOICE",
-        "CREDIT_NOTE",
-        "CORRECTED_INVOICE",
-        "UNKNOWN",
-    ]);
-
-    const extractedDocumentType = invoiceData.document_type;
-
-    const documentType = allowedDocumentTypes.has(extractedDocumentType)
-        ? extractedDocumentType
+    const documentType = ALLOWED_DOCUMENT_TYPES.has(
+        invoiceData.document_type
+    )
+        ? invoiceData.document_type
         : "UNKNOWN";
 
     const normalized = {
         documentType,
-        originalInvoiceNumber: unwrap(
-            invoiceData.original_invoice_number
-        ),
+        originalInvoiceNumber: unwrap(invoiceData.original_invoice_number),
 
         invoiceNumber: unwrap(invoiceData.invoice_number),
         invoiceDate: parseDate(unwrap(invoiceData.invoice_date)),
@@ -133,14 +135,14 @@ export function normalizeInvoiceData(invoiceData) {
         currencyCode: currency.currencyCode,
         currencyStatus: currency.currencyStatus,
 
-       subtotal: parseAmount(unwrap(invoiceData.subtotal)),
+        subtotal: parseAmount(unwrap(invoiceData.subtotal)),
         taxTreatment: ["INCLUSIVE", "EXCLUSIVE", "UNKNOWN"].includes(
             invoiceData.tax_treatment
         )
             ? invoiceData.tax_treatment
             : "UNKNOWN",
-taxAmount: parseAmount(unwrap(invoiceData.tax_amount)),
-discount: parseAmount(unwrap(invoiceData.discount)),
+        taxAmount: parseAmount(unwrap(invoiceData.tax_amount)),
+        discount: parseAmount(unwrap(invoiceData.discount)),
         totalAmount: parseAmount(unwrap(invoiceData.total_amount)),
 
         lineItems: (lineItems ?? []).map(normalizeLineItem),
