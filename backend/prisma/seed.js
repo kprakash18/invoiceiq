@@ -52,14 +52,21 @@ const vendors = [
     address: "Ahmedabad, Gujarat",
     currency: "INR",
   },
+  {
+    name: "Duplicate Test Supplies Ltd",
+    taxId: "27AABCD5678E1Z5",
+    email: "billing@duplicatetest.example",
+    phone: "9000000205",
+    address: "Mumbai, Maharashtra",
+    currency: "INR",
+  },
 ];
 
 const purchaseOrders = [
   {
-    poNumber: "PO-HAPPY-PDF",
+    poNumber: "PO-HAPPY",
     vendorTaxId: "36AABCA1234C1Z5",
     totalAmount: "10000",
-    issueDate: "2026-11-01",
     items: [
       {
         description: "Business Monitor",
@@ -70,24 +77,9 @@ const purchaseOrders = [
     ],
   },
   {
-    poNumber: "PO-HAPPY-JPG",
-    vendorTaxId: "36AABCA1234C1Z5",
-    totalAmount: "6000",
-    issueDate: "2026-11-01",
-    items: [
-      {
-        description: "Wireless Keyboard",
-        itemCode: "KEY-HAPPY-001",
-        quantity: "3",
-        unitPrice: "2000",
-      },
-    ],
-  },
-  {
     poNumber: "PO-CUMULATIVE",
     vendorTaxId: "33AABCP1234C1Z5",
     totalAmount: "100000",
-    issueDate: "2026-11-01",
     items: [
       {
         description: "Industrial Component",
@@ -101,7 +93,6 @@ const purchaseOrders = [
     poNumber: "PO-BUNDLE-01",
     vendorTaxId: "09AABCU1234C1Z5",
     totalAmount: "90000",
-    issueDate: "2026-11-01",
     items: [
       {
         description: "Server Maintenance",
@@ -115,7 +106,6 @@ const purchaseOrders = [
     poNumber: "PO-BUNDLE-02",
     vendorTaxId: "09AABCU1234C1Z5",
     totalAmount: "60000",
-    issueDate: "2026-11-01",
     items: [
       {
         description: "Network Support",
@@ -128,22 +118,20 @@ const purchaseOrders = [
   {
     poNumber: "PO-TAX-INCLUSIVE",
     vendorTaxId: "24AABCT1234C1Z5",
-    totalAmount: "25000",
-    issueDate: "2026-11-01",
+    totalAmount: "10000",
     items: [
       {
         description: "A4 Paper Ream",
         itemCode: "PAP-TAX-001",
         quantity: "100",
-        unitPrice: "250",
+        unitPrice: "100",
       },
     ],
   },
   {
     poNumber: "PO-DUPLICATE",
-    vendorTaxId: "33AABCP1234C1Z5",
+    vendorTaxId: "27AABCD5678E1Z5",
     totalAmount: "5000",
-    issueDate: "2026-11-01",
     items: [
       {
         description: "Storage Drive",
@@ -158,79 +146,78 @@ const purchaseOrders = [
 async function main() {
   console.log("Starting InvoiceIQ evaluation-data seeding...");
 
-  for (const user of users) {
-    await prisma.user.upsert({
-      where: { email: user.email },
-      update: { name: user.name, role: user.role },
-      create: user,
-    });
-  }
-
-  for (const vendor of vendors) {
-    await prisma.vendor.upsert({
-      where: { taxId: vendor.taxId },
-      update: {
-        name: vendor.name,
-        email: vendor.email,
-        phone: vendor.phone,
-        address: vendor.address,
-        currency: vendor.currency,
-      },
-      create: vendor,
-    });
-  }
-
-  for (const poData of purchaseOrders) {
-    const vendor = await prisma.vendor.findUnique({
-      where: { taxId: poData.vendorTaxId },
-    });
-
-    if (!vendor) {
-      throw new Error(`Vendor not found: ${poData.vendorTaxId}`);
-    }
-
-    const purchaseOrder = await prisma.purchaseOrder.upsert({
-      where: { poNumber: poData.poNumber },
-      update: {
-        vendorId: vendor.id,
-        totalAmount: poData.totalAmount,
-        issueDate: new Date(poData.issueDate),
-        currency: "INR",
-        status: "OPEN",
-      },
-      create: {
-        poNumber: poData.poNumber,
-        vendorId: vendor.id,
-        totalAmount: poData.totalAmount,
-        issueDate: new Date(poData.issueDate),
-        currency: "INR",
-        status: "OPEN",
-      },
-    });
-
-    for (let i = 0; i < poData.items.length; i++) {
-      const item = poData.items[i];
-
-      await prisma.pOLineItem.upsert({
-        where: { id: `${poData.poNumber}-LINE-${i + 1}` },
-        update: {
-          description: item.description,
-          itemCode: item.itemCode,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-          poId: purchaseOrder.id,
-        },
-        create: {
-          id: `${poData.poNumber}-LINE-${i + 1}`,
-          poId: purchaseOrder.id,
-          description: item.description,
-          itemCode: item.itemCode,
-          quantity: item.quantity,
-          unitPrice: item.unitPrice,
-        },
+  await prisma.$transaction(async (tx) => {
+    for (const user of users) {
+      await tx.user.upsert({
+        where: { email: user.email },
+        update: { name: user.name, role: user.role },
+        create: user,
       });
     }
-  }
+
+    for (const vendorData of vendors) {
+      await tx.vendor.upsert({
+        where: { taxId: vendorData.taxId },
+        update: {
+          name: vendorData.name,
+          email: vendorData.email,
+          phone: vendorData.phone,
+          address: vendorData.address,
+          currency: vendorData.currency,
+        },
+        create: vendorData,
+      });
+    }
+
+    for (const poData of purchaseOrders) {
+      const vendor = await tx.vendor.findUnique({
+        where: { taxId: poData.vendorTaxId },
+      });
+
+      if (!vendor) {
+        throw new Error(`Vendor not found: ${poData.vendorTaxId}`);
+      }
+
+      const po = await tx.purchaseOrder.upsert({
+        where: { poNumber: poData.poNumber },
+        update: {
+          vendorId: vendor.id,
+          totalAmount: poData.totalAmount,
+          issueDate: new Date("2026-11-01T00:00:00.000Z"),
+          currency: "INR",
+          status: "OPEN",
+        },
+        create: {
+          poNumber: poData.poNumber,
+          vendorId: vendor.id,
+          totalAmount: poData.totalAmount,
+          issueDate: new Date("2026-11-01T00:00:00.000Z"),
+          currency: "INR",
+          status: "OPEN",
+        },
+      });
+
+      // Reconcile the PO's line items.
+      await tx.pOLineItem.deleteMany({
+        where: { poId: po.id },
+      });
+
+      for (let i = 0; i < poData.items.length; i++) {
+        const item = poData.items[i];
+
+        await tx.pOLineItem.create({
+          data: {
+            id: `${poData.poNumber}-LINE-${i + 1}`,
+            poId: po.id,
+            description: item.description,
+            itemCode: item.itemCode,
+            quantity: item.quantity,
+            unitPrice: item.unitPrice,
+          },
+        });
+      }
+    }
+  });
 
   const counts = {
     users: await prisma.user.count(),
@@ -238,6 +225,7 @@ async function main() {
     purchaseOrders: await prisma.purchaseOrder.count(),
     poLineItems: await prisma.pOLineItem.count(),
     invoices: await prisma.invoice.count(),
+    processingJobs: await prisma.invoiceProcessingJob.count(),
   };
 
   console.log("\nInvoiceIQ seed summary:");
