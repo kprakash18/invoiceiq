@@ -1,7 +1,6 @@
 import "dotenv/config";
 
 import app from "./app.js";
-import { invoiceWorker } from "./workers/invoice.worker.js";
 import { invoiceQueue } from "./queues/invoice.queue.js";
 import { recoverInvoiceProcessingJobs } from "./services/invoice-job.service.js";
 import { prisma } from "./config/prisma.js";
@@ -18,15 +17,14 @@ async function startServer() {
             `[Recovery] Republished ${recoveredCount} pending jobs.`
         );
 
-        server = app.listen(PORT, () => {
+        server = app.listen(PORT, "0.0.0.0", () => {
             console.log(`InvoiceIQ API running on port ${PORT}`);
-            console.log(`Health: http://localhost:${PORT}/api/health`);
-            console.log("Invoice processing worker started.");
+            console.log("Health endpoint: /api/health");
+            console.log("Invoice processing worker runs in its own process.");
         });
     } catch (error) {
         console.error("[Startup] Recovery failed:", error);
 
-        await invoiceWorker.close();
         await invoiceQueue.close();
         await prisma.$disconnect();
 
@@ -45,14 +43,15 @@ async function shutdown(signal) {
     console.log(`${signal} received. Shutting down...`);
 
     try {
-        await new Promise((resolve, reject) => {
-            server.close((error) => {
-                if (error) reject(error);
-                else resolve();
+        if (server) {
+            await new Promise((resolve, reject) => {
+                server.close((error) => {
+                    if (error) reject(error);
+                    else resolve();
+                });
             });
-        });
+        }
 
-        await invoiceWorker.close();
         await invoiceQueue.close();
         await prisma.$disconnect();
 

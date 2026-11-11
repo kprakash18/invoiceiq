@@ -6,11 +6,15 @@ import { prisma } from "../config/prisma.js";
 import { readFile } from "node:fs/promises";
 import { basename, extname, resolve } from "node:path";
 import { FILE_CONTENT_TYPES } from "../utils/file-metadata.js";
+import { storageRoot } from "../utils/storage-root.js";
 
 const EXTRACTION_SERVICE_URL =
     process.env.EXTRACTION_SERVICE_URL ?? "http://localhost:8000";
+const extractionServiceUrl = /^https?:\/\//i.test(EXTRACTION_SERVICE_URL)
+    ? EXTRACTION_SERVICE_URL
+    : `http://${EXTRACTION_SERVICE_URL}`;
 
-const STORAGE_ROOT = resolve(process.cwd(), "storage");
+const STORAGE_ROOT = storageRoot;
 
 export async function extractInvoiceFromFile(filePath) {
     if (!filePath) {
@@ -44,7 +48,7 @@ export async function extractInvoiceFromFile(filePath) {
         formData.append("file", invoiceBlob, basename(filePath));
 
         const response = await fetch(
-            `${EXTRACTION_SERVICE_URL}/process`,
+            `${extractionServiceUrl}/process`,
             {
                 method: "POST",
                 body: formData,

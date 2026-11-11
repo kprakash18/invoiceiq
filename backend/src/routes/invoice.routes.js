@@ -10,12 +10,17 @@ import {
     moveToPermanentStorage,
     deleteStoredFile,
 } from "../utils/file-storage.js";
+import { storageRoot } from "../utils/storage-root.js";
 
 import { prisma } from "../config/prisma.js";
 import { enqueueInvoiceProcessing } from "../services/invoice-job.service.js";
 import { FILE_CONTENT_TYPES } from "../utils/file-metadata.js";
 
 const router = Router();
+const frontendOrigins = (process.env.FRONTEND_URL || "http://localhost:5173")
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
 
 export function buildInvoiceListResponse({
     invoices,
@@ -268,7 +273,6 @@ router.get("/", async (req, res, next) => {
                 });
             }
 
-            const storageRoot = resolve(process.cwd(), "storage");
             const absolutePath = resolve(storageRoot, invoice.filePath);
 
             // Prevent paths outside the storage directory.
@@ -304,7 +308,7 @@ router.get("/", async (req, res, next) => {
             );
             res.setHeader(
                 "Content-Security-Policy",
-                "frame-ancestors 'self' http://localhost:5173"
+                `frame-ancestors 'self' ${frontendOrigins.join(" ")}`
             );
 
             return res.sendFile(absolutePath);
@@ -553,8 +557,7 @@ router.post("/:id/retry", async (req, res, next) => {
         }
 
         const absolutePath = resolve(
-            process.cwd(),
-            "storage",
+            storageRoot,
             invoice.filePath
         );
 

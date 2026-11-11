@@ -1,8 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
-
-const storageRoot = path.resolve(process.cwd(), "storage");
+import { storageRoot } from "./storage-root.js";
 
 export async function moveToPermanentStorage(tempFilePath) {
   const now = new Date();

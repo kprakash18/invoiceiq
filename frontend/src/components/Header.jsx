@@ -4,7 +4,7 @@ function Header({ onUpload }) {
   return (
     <header className="top-header">
       <div className="header-context" aria-label="Application context">
-        <span>InvoiceIQ</span>
+        <span>Invoice Process</span>
         <strong>PDF to decision pipeline</strong>
       </div>
 

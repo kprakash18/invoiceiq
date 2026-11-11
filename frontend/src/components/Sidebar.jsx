@@ -9,9 +9,9 @@ function Sidebar({ activeView = 'all-invoices', onNavigate }) {
   return (
     <aside className="sidebar">
       <div className="brand-lockup">
-        <div className="brand-mark">IQ</div>
+        <div className="brand-mark">IP</div>
         <div>
-          <div className="brand-name">InvoiceIQ</div>
+          <div className="brand-name">Invoice Process</div>
           <div className="brand-subtitle">Processing Demo</div>
         </div>
       </div>

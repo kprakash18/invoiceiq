@@ -2,17 +2,14 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { randomUUID } from "crypto";
+import { storageRoot } from "../utils/storage-root.js";
 import {
   FILE_CONTENT_TYPES,
   FILE_EXTENSIONS_BY_MIME_TYPE,
 } from "../utils/file-metadata.js";
 
 // Temporary upload directory
-const uploadDirectory = path.resolve(
-  process.cwd(),
-  "storage",
-  "tmp"
-);
+const uploadDirectory = path.join(storageRoot, "tmp");
 
 // Create directory if it does not exist
 fs.mkdirSync(uploadDirectory, { recursive: true });

@@ -1,0 +1,82 @@
+services:
+  - type: keyvalue
+    name: invoiceiq-redis
+    plan: starter
+    region: oregon
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+
+  - type: web
+    name: invoiceiq-extraction
+    runtime: python
+    plan: starter
+    region: oregon
+    rootDir: extraction-service
+    buildCommand: ./render-build.sh
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.4
+      - key: PYTHONUNBUFFERED
+        value: "1"
+      - key: GEMINI_API_KEY
+        sync: false
+
+  - type: web
+    name: invoiceiq-api
+    runtime: node
+    plan: starter
+    region: oregon
+    rootDir: backend
+    buildCommand: npm ci --include=dev && npm run build
+    startCommand: npm run start:render
+    healthCheckPath: /api/health
+    disk:
+      name: invoice-files
+      mountPath: /app/storage
+      sizeGB: 10
+    envVars:
+      - key: NODE_VERSION
+        value: 22.16.0
+      - key: NODE_ENV
+        value: production
+      - key: STORAGE_DIR
+        value: /app/storage
+      - key: DATABASE_URL
+        fromDatabase:
+          name: invoiceiq-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: invoiceiq-redis
+          property: connectionString
+      - key: EXTRACTION_SERVICE_URL
+        fromService:
+          type: web
+          name: invoiceiq-extraction
+          property: hostport
+      - key: FRONTEND_URL
+        sync: false
+
+  - type: web
+    name: invoiceiq-frontend
+    runtime: static
+    rootDir: frontend
+    buildCommand: npm ci && npm run build
+    staticPublishPath: dist
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+    envVars:
+      - key: VITE_API_URL
+        sync: false
+
+databases:
+  - name: invoiceiq-db
+    plan: 0.5c-1g
+    region: oregon
+    postgresMajorVersion: "17"
+    ipAllowList: []
